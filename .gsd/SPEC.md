@@ -3,23 +3,24 @@
 > **Status**: `FINALIZED`
 
 ## Vision
-Eklavya.AI is an AI-powered goal achievement platform that transforms ambitions into actionable, gamified, and adaptive plans. It uses a GenAI "Guru" for personalized roadmap generation and an Agentic AI "Coach" for proactive drift detection and recovery. The MVP focuses on the "Learning Deep Learning" domain as proof of concept, delivered as a Flutter mobile app with a shared Python/FastAPI backend (also consumed by a React web app).
+Eklavya.AI is an AI-powered goal achievement platform that transforms ambitions into actionable, gamified, and adaptive plans across multiple domains (Learning, Fitness, Startup, Finance, Writing, and more). It uses a GenAI "Guru" for personalized roadmap generation, an Agentic AI "Coach" with reinforcement learning for proactive drift detection, and behavioral nudging for sustained motivation. The primary proof-of-concept domain is "Learning Deep Learning," delivered as a Flutter mobile app with a shared Python/FastAPI backend (also consumed by a React web app).
 
 ## Goals
-1. **Guru Onboarding**: A conversational AI generates a personalized, time-bound Deep Learning curriculum with milestones.
-2. **Gamified Execution**: Users progress through tasks earning XP, badges, streaks, and "Dhanushya Challenges."
-3. **Agentic Coach**: A background AI agent detects when users drift off-track and auto-adjusts the plan with recovery strategies.
-4. **Shared Backend**: A single Python/FastAPI + Supabase backend serves both the Flutter mobile app and the React web app.
+1. **Guru Onboarding**: A conversational AI generates a personalized, time-bound roadmap with milestones for any supported domain.
+2. **Multi-Domain Support**: Domain-specific AI tools for Learning, Fitness, Startup, Finance, Writing — each with tailored prompts, trackers, and analytics.
+3. **Gamified Execution**: Users progress through tasks earning XP, badges, streaks, and "Dhanushya Challenges."
+4. **Agentic Coach with RL**: A background AI agent uses reinforcement learning signals (user completion patterns, engagement decay) to detect drift and auto-adjust plans. Behavioral nudges are personalized based on the user's response history.
+5. **Behavioral Chatbot**: The Guru isn't just an onboarding tool — it's an ongoing conversational coach that adapts its tone, motivation style, and intervention timing using behavioral psychology principles.
+6. **Shared Backend**: A single Python/FastAPI + Supabase backend serves both the Flutter mobile app and the React web app.
 
 ## Non-Goals (Out of Scope)
 - Voice-activated "Guru Mode" (future phase).
 - Wearable integration (future phase).
-- Multi-domain support beyond "Learning Deep Learning" (future phase — architecture supports it, but UI/prompts are scoped to one domain).
 - Payment/subscription features.
 - Social features (leaderboards, sharing).
 
 ## Users
-- **Primary**: Ambitious learners who want to master Deep Learning but struggle with consistency and planning.
+- **Primary**: Ambitious individuals pursuing goals across domains (learning, fitness, startups, finance, writing) who struggle with consistency and planning.
 - **Secondary**: The development team pitching Eklavya.AI as a unified web + mobile product.
 
 ## Constraints

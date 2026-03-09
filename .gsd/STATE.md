@@ -10,8 +10,9 @@
 - Flutter app scaffolded (`eklavya_mobile`) with Riverpod + GoRouter
 - Python FastAPI backend scaffolded (`eklavya_backend`) with Clean Architecture
 - Architecture decided: Thin Client, Python backend, Supabase PostgreSQL
-- SPEC.md finalized
-- ROADMAP.md created (4 phases)
+- SPEC.md finalized (multi-domain, RL Coach, Behavioral Chatbot in scope)
+- ROADMAP.md created (5 phases, Phase 2 = Premium Flutter App Shell)
+- GSD initialized with DECISIONS.md, JOURNAL.md, TODO.md
 
 ## What's Next
 - Design Supabase PostgreSQL schema (Users, Goals, Milestones, Tasks, UserProgress)

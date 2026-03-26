@@ -44,4 +44,6 @@ class TaskType(str, Enum):
     WATCH = "watch"
     PRACTICE = "practice"
     QUIZ = "quiz"
+    WRITE = "write"
+    EXERCISE = "exercise"
     CUSTOM = "custom"

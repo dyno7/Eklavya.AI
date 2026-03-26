@@ -105,7 +105,7 @@ class _NavItemState extends State<_NavItem> with SingleTickerProviderStateMixin 
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: Duration(milliseconds: 400),
+      duration: Duration(milliseconds: 5200),
     );
     _travelAnimation = CurvedAnimation(
       parent: _controller,
@@ -148,7 +148,7 @@ class _NavItemState extends State<_NavItem> with SingleTickerProviderStateMixin 
       child: SizedBox(
         height: 48,
         child: AnimatedContainer(
-          duration: Duration(milliseconds: 250),
+          duration: Duration(milliseconds: 900),
           curve: Curves.easeOutCubic,
           padding: EdgeInsets.symmetric(
             horizontal: isActive ? AppSpacing.lg : AppSpacing.md,
@@ -174,7 +174,7 @@ class _NavItemState extends State<_NavItem> with SingleTickerProviderStateMixin 
               : Center(
                   child: Icon(
                     widget.item.icon,
-                    size: 22,
+                    size: 26,
                     color: iconColor,
                   ),
                 ),
@@ -200,14 +200,15 @@ class _TravelingLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Crossfade between Row layout (beside) and Column layout (below)
+    // Crossfade: fade out slowly 0.3→0.55, fade in slowly 0.45→0.7
+    // Wider window = smoother, less abrupt switch
     final opacity = progress < 0.3
-        ? 1.0 // Fully visible in "beside" mode
-        : (progress < 0.5
-            ? (1.0 - ((progress - 0.3) / 0.2)) // Fade out
+        ? 1.0
+        : (progress < 0.55
+            ? (1.0 - ((progress - 0.3) / 0.25))
             : (progress < 0.7
-                ? ((progress - 0.5) / 0.2) // Fade in
-                : 1.0)); // Fully visible in "below" mode
+                ? ((progress - 0.45) / 0.25)
+                : 1.0));
 
     final showBelow = progress > 0.5;
 
@@ -216,7 +217,7 @@ class _TravelingLabel extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(item.icon, size: 22, color: color),
+              Icon(item.icon, size: 26, color: color),
               SizedBox(height: 2),
               Opacity(
                 opacity: opacity.clamp(0.0, 1.0),
@@ -235,7 +236,7 @@ class _TravelingLabel extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(item.icon, size: 22, color: color),
+              Icon(item.icon, size: 26, color: color),
               SizedBox(width: AppSpacing.sm),
               Opacity(
                 opacity: opacity.clamp(0.0, 1.0),

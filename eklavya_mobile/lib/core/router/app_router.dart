@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../theme/page_transitions.dart';
+import '../widgets/gradient_background.dart';
 
 import '../../features/analytics/analytics_tab.dart';
 import '../../features/auth/login_screen.dart';
@@ -52,7 +53,7 @@ final GoRouter appRouter = GoRouter(
       pageBuilder: (context, state) => fadeSlideTransition(
         context: context,
         state: state,
-        child: ProfileTab(),
+        child: GradientBackground(child: ProfileTab()),
       ),
     ),
 

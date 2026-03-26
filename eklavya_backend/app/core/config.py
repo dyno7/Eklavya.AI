@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     # Environment (development / staging / production)
     ENVIRONMENT: str = "development"
 
+    # Google Gemini API key — for the Guru Agent
+    GEMINI_API_KEY: str = ""
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:go_router/go_router.dart';
 import 'package:lottie/lottie.dart';
 
 import '../../core/services/chat_service.dart';
@@ -236,7 +237,7 @@ class _ChatTabState extends State<ChatTab> {
         SizedBox(height: AppSpacing.md),
         GestureDetector(
           onTap: () {
-            // Navigate to goals tab in the future
+            context.go('/');
           },
           child: Container(
             width: double.infinity,

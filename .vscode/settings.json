@@ -1,0 +1,7 @@
+{
+    "python.defaultInterpreterPath": "${workspaceFolder}/eklavya_backend/.venv/Scripts/python.exe",
+    "python.analysis.extraPaths": [
+        "eklavya_backend"
+    ],
+    "python.terminal.useEnvFile": true
+}

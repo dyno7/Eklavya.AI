@@ -3,7 +3,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lottie/lottie.dart';
 
-import '../../core/data/demo_data.dart';
+import '../../core/services/dashboard_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_radii.dart';
 import '../../core/theme/app_spacing.dart';
@@ -18,14 +18,36 @@ class HomeTab extends StatefulWidget {
 }
 
 class _HomeTabState extends State<HomeTab> {
-  late final DemoUser user;
-  late final List<DemoTask> tasks;
+  final _dashboardService = DashboardService();
+  DashboardSummary? _data;
 
   @override
   void initState() {
     super.initState();
-    user = DemoData.user;
-    tasks = DemoData.tasks;
+    _fetchDashboard();
+  }
+
+  Future<void> _fetchDashboard() async {
+    final summary = await _dashboardService.getSummary();
+    if (!mounted) return;
+    setState(() {
+      _data = summary;
+    });
+  }
+
+  Future<void> _onTaskComplete(TaskSummary task) async {
+    final result = await _dashboardService.completeTask(task.id);
+    if (!mounted) return;
+    if (result != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('+${result.$1} XP earned! ⭐'),
+          backgroundColor: context.colors.success,
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+    _fetchDashboard(); // Refresh
   }
 
   String _getGreeting() {
@@ -69,7 +91,9 @@ class _HomeTabState extends State<HomeTab> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final priorityGoal = DemoData.goals.first; // Most recent / priority goal
+    final data = _data ?? DashboardSummary.demo();
+    final priorityGoal = data.activeGoal;
+    final userStats = data.user;
     
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -100,7 +124,7 @@ class _HomeTabState extends State<HomeTab> {
                         Row(
                           children: [
                             Text(
-                              user.displayName,
+                              userStats.displayName.isNotEmpty ? userStats.displayName : 'User',
                               style: theme.textTheme.headlineLarge?.copyWith(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 28,
@@ -119,8 +143,15 @@ class _HomeTabState extends State<HomeTab> {
                   ),
                   // Right: Notification bell + Profile avatar
                   _NotificationBell(
-                    hasUnread: true,
-                    onTap: () {},
+                    hasUnread: false,
+                    onTap: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('No new notifications'),
+                          duration: Duration(seconds: 1),
+                        ),
+                      );
+                    },
                   ),
                   SizedBox(width: AppSpacing.sm),
                   GestureDetector(
@@ -138,7 +169,7 @@ class _HomeTabState extends State<HomeTab> {
                       ),
                       child: Center(
                         child: Text(
-                          user.displayName[0],
+                          (userStats.displayName.isNotEmpty ? userStats.displayName[0] : 'U'),
                           style: TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.bold,
@@ -153,6 +184,7 @@ class _HomeTabState extends State<HomeTab> {
               SizedBox(height: AppSpacing.xl),
               
               // ─── Let's Continue Card (Priority Goal) ───
+              if (priorityGoal != null)
               GlassCard(
                 padding: EdgeInsets.all(AppSpacing.lg),
                 child: Column(
@@ -180,7 +212,6 @@ class _HomeTabState extends State<HomeTab> {
                     SizedBox(height: AppSpacing.sm),
                     Row(
                       children: [
-                        // Domain tag chip
                         Container(
                           padding: EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                           decoration: BoxDecoration(
@@ -209,17 +240,18 @@ class _HomeTabState extends State<HomeTab> {
                         ),
                         SizedBox(width: AppSpacing.md),
                         Text(
-                          '${priorityGoal.completedMilestones}/${priorityGoal.milestonesCount} milestones',
+                          '${priorityGoal.completedMilestones}/${priorityGoal.totalMilestones} milestones',
                           style: theme.textTheme.labelMedium?.copyWith(color: context.colors.textSecondary),
                         ),
                       ],
                     ),
                     SizedBox(height: AppSpacing.lg),
-                    // Progress bar
                     ClipRRect(
                       borderRadius: AppRadii.pill,
                       child: LinearProgressIndicator(
-                        value: priorityGoal.progress,
+                        value: priorityGoal.totalMilestones > 0
+                            ? priorityGoal.completedMilestones / priorityGoal.totalMilestones
+                            : 0,
                         backgroundColor: context.colors.surfaceLight,
                         valueColor: AlwaysStoppedAnimation<Color>(context.colors.primary),
                         minHeight: 8,
@@ -230,10 +262,9 @@ class _HomeTabState extends State<HomeTab> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          '${(priorityGoal.progress * 100).toInt()}% complete',
+                          '${priorityGoal.totalMilestones > 0 ? ((priorityGoal.completedMilestones / priorityGoal.totalMilestones) * 100).toInt() : 0}% complete',
                           style: theme.textTheme.labelSmall?.copyWith(color: context.colors.textSecondary),
                         ),
-                        // Continue CTA
                         Container(
                           padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                           decoration: BoxDecoration(
@@ -257,6 +288,19 @@ class _HomeTabState extends State<HomeTab> {
                   ],
                 ),
               ).animate().fadeIn().slideY(begin: 0.1, end: 0, duration: 500.ms),
+              if (priorityGoal == null)
+              GlassCard(
+                padding: EdgeInsets.all(AppSpacing.xl),
+                child: Column(
+                  children: [
+                    Icon(Icons.rocket_launch_rounded, size: 48, color: context.colors.textTertiary),
+                    SizedBox(height: AppSpacing.md),
+                    Text('No active goal yet', style: theme.textTheme.titleMedium?.copyWith(color: context.colors.textSecondary)),
+                    SizedBox(height: AppSpacing.sm),
+                    Text('Chat with the Guru to create your roadmap!', style: theme.textTheme.bodySmall?.copyWith(color: context.colors.textTertiary)),
+                  ],
+                ),
+              ).animate().fadeIn().slideY(begin: 0.1, end: 0, duration: 500.ms),
               
               SizedBox(height: AppSpacing.lg),
               
@@ -276,7 +320,7 @@ class _HomeTabState extends State<HomeTab> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            '${user.currentStreak} Day Streak 🔥',
+                            '${userStats.currentStreak} Day Streak 🔥',
                             style: theme.textTheme.titleMedium,
                           ),
                           SizedBox(height: 4),
@@ -331,7 +375,7 @@ class _HomeTabState extends State<HomeTab> {
                             borderRadius: AppRadii.pill,
                           ),
                           child: Text(
-                            'Level ${user.level}',
+                            'Level ${(userStats.totalXp ~/ 100) + 1}',
                             style: theme.textTheme.labelMedium?.copyWith(color: context.colors.primaryLight),
                           ),
                         ),
@@ -339,7 +383,7 @@ class _HomeTabState extends State<HomeTab> {
                     ),
                     SizedBox(height: AppSpacing.sm),
                     TweenAnimationBuilder<int>(
-                      tween: IntTween(begin: 0, end: user.totalXp),
+                      tween: IntTween(begin: 0, end: userStats.totalXp),
                       duration: Duration(milliseconds: 1500),
                       curve: Curves.easeOutCubic,
                       builder: (context, value, child) {
@@ -374,16 +418,21 @@ class _HomeTabState extends State<HomeTab> {
                 children: [
                   Text('Today\'s Tasks', style: theme.textTheme.titleLarge),
                   TextButton(
-                    onPressed: () {},
+                    onPressed: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Coming soon in Phase 7!'), duration: Duration(seconds: 1)),
+                      );
+                    },
                     child: Text('See All', style: TextStyle(color: context.colors.primaryLight)),
                   ),
                 ],
               ),
               SizedBox(height: AppSpacing.md),
               
-              ...tasks.asMap().entries.map((entry) {
+              ...data.pendingTasks.asMap().entries.map((entry) {
                 final idx = entry.key;
                 final task = entry.value;
+                final isCompleted = task.status == 'completed';
                 return Padding(
                   padding: EdgeInsets.only(bottom: AppSpacing.md),
                   child: Container(
@@ -395,15 +444,15 @@ class _HomeTabState extends State<HomeTab> {
                     child: ListTile(
                       contentPadding: EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: 8),
                       leading: Icon(
-                        _getTaskIcon(task.type),
-                        color: task.isCompleted ? context.colors.success : context.colors.secondary,
+                        _getTaskIcon(task.taskType),
+                        color: isCompleted ? context.colors.success : context.colors.secondary,
                         size: 28,
                       ),
                       title: Text(
                         task.title,
                         style: theme.textTheme.bodyLarge?.copyWith(
-                          decoration: task.isCompleted ? TextDecoration.lineThrough : null,
-                          color: task.isCompleted ? context.colors.textTertiary : context.colors.textPrimary,
+                          decoration: isCompleted ? TextDecoration.lineThrough : null,
+                          color: isCompleted ? context.colors.textTertiary : context.colors.textPrimary,
                         ),
                       ),
                       subtitle: Padding(
@@ -414,15 +463,13 @@ class _HomeTabState extends State<HomeTab> {
                         ),
                       ),
                       trailing: Checkbox(
-                        value: task.isCompleted,
+                        value: isCompleted,
                         activeColor: context.colors.success,
                         checkColor: context.colors.background,
                         side: BorderSide(color: context.colors.textSecondary, width: 2),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                        onChanged: (val) {
-                          setState(() {
-                            task.isCompleted = val ?? false;
-                          });
+                        onChanged: isCompleted ? null : (val) {
+                          if (val == true) _onTaskComplete(task);
                         },
                       ),
                     ),
@@ -438,7 +485,11 @@ class _HomeTabState extends State<HomeTab> {
                 children: [
                   Text('Suggested Resources', style: theme.textTheme.titleLarge),
                   TextButton(
-                    onPressed: () {},
+                    onPressed: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Coming soon in Phase 7!'), duration: Duration(seconds: 1)),
+                      );
+                    },
                     child: Text('See All', style: TextStyle(color: context.colors.primaryLight)),
                   ),
                 ],

@@ -146,13 +146,13 @@ class _NavItemState extends State<_NavItem> with SingleTickerProviderStateMixin 
       behavior: HitTestBehavior.opaque,
       // Fixed height wrapper prevents container shape changes
       child: SizedBox(
-        height: 48,
+        height: 56,
         child: AnimatedContainer(
           duration: Duration(milliseconds: 900),
           curve: Curves.easeOutCubic,
           padding: EdgeInsets.symmetric(
             horizontal: isActive ? AppSpacing.lg : AppSpacing.md,
-            vertical: 4,
+            vertical: 2,
           ),
           decoration: BoxDecoration(
             color: isActive ? context.colors.primary : Colors.transparent,
@@ -217,8 +217,8 @@ class _TravelingLabel extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(item.icon, size: 26, color: color),
-              SizedBox(height: 2),
+              Icon(item.icon, size: 22, color: color),
+              SizedBox(height: 1),
               Opacity(
                 opacity: opacity.clamp(0.0, 1.0),
                 child: Text(

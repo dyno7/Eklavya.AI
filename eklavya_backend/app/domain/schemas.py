@@ -30,6 +30,8 @@ class UserResponse(BaseModel):
     id: UUID
     display_name: str
     avatar_url: Optional[str] = None
+    total_xp: int = 0
+    current_streak: int = 0
     created_at: datetime
 
 

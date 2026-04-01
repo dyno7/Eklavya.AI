@@ -42,6 +42,12 @@ class User(Base):
         String(255), default="", server_default=text("''")
     )
     avatar_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    total_xp: Mapped[int] = mapped_column(
+        Integer, default=0, server_default=text("0")
+    )
+    current_streak: Mapped[int] = mapped_column(
+        Integer, default=0, server_default=text("0")
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=text("now()")
     )

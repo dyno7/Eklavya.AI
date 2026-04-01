@@ -7,6 +7,7 @@ from app.presentation.goals import router as goals_router
 from app.presentation.tasks import router as tasks_router
 from app.presentation.users import router as users_router
 from app.presentation.chat import router as chat_router
+from app.presentation.dashboard import router as dashboard_router
 
 
 @asynccontextmanager
@@ -36,6 +37,7 @@ app.include_router(goals_router)
 app.include_router(tasks_router)
 app.include_router(users_router)
 app.include_router(chat_router)
+app.include_router(dashboard_router)
 
 
 @app.get("/health")

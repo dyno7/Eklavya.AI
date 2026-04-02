@@ -1,6 +1,9 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
+import '../config/app_config.dart';
+import '../services/auth_service.dart';
+
 /// A single chat message.
 class ChatMessage {
   final String text;
@@ -17,18 +20,21 @@ class ChatMessage {
 /// Service that communicates with the Guru Agent backend.
 /// Falls back to offline canned responses if backend is unreachable.
 class ChatService {
-  // For Android emulator → host: 10.0.2.2
-  // For physical device on same WiFi: use your machine's local IP
-  static const String _baseUrl = 'http://10.0.2.2:8000';
+  String get _baseUrl => AppConfig.backendUrl;
 
   final String domain;
-  final String userId;
   int _offlineStep = 0;
 
   ChatService({
     this.domain = 'learning',
-    this.userId = 'demo-user',
   });
+
+  Map<String, String> get _headers {
+    final headers = <String, String>{'Content-Type': 'application/json'};
+    final token = AuthService.accessToken;
+    if (token != null) headers['Authorization'] = 'Bearer $token';
+    return headers;
+  }
 
   /// Send a message and get the Guru's reply.
   /// Returns (replyText, isRoadmapReady, roadmapJson)
@@ -36,11 +42,11 @@ class ChatService {
     try {
       final response = await http.post(
         Uri.parse('$_baseUrl/api/chat/send'),
-        headers: {'Content-Type': 'application/json'},
+        headers: _headers,
         body: jsonEncode({
           'message': message,
           'domain': domain,
-          'user_id': userId,
+          'user_id': AuthService.userId,
         }),
       ).timeout(Duration(seconds: 15));
 
@@ -64,7 +70,8 @@ class ChatService {
     _offlineStep = 0;
     try {
       await http.post(
-        Uri.parse('$_baseUrl/api/chat/reset/$userId'),
+        Uri.parse('$_baseUrl/api/chat/reset/${AuthService.userId}'),
+        headers: _headers,
       ).timeout(Duration(seconds: 5));
     } catch (_) {
       // Ignore — offline mode just resets local step

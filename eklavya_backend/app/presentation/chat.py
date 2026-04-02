@@ -99,3 +99,15 @@ async def reset_session(user_id: str):
         _sessions[user_id].reset()
         del _sessions[user_id]
     return {"status": "ok", "message": f"Session for {user_id} has been reset"}
+
+
+@router.get("/debug")
+async def debug_status():
+    """Non-authenticated debug endpoint — shows whether Gemini API is live or demo."""
+    from app.core.config import get_settings
+    settings = get_settings()
+    return {
+        "gemini_key_set": bool(settings.GEMINI_API_KEY),
+        "gemini_key_preview": settings.GEMINI_API_KEY[:8] + "..." if settings.GEMINI_API_KEY else "NOT SET",
+        "environment": settings.ENVIRONMENT,
+    }

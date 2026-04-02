@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
+import '../config/app_config.dart';
 import '../data/demo_data.dart';
+import '../services/auth_service.dart';
 
 // ─── Models ────────────────────────────────────────
 
@@ -147,20 +149,22 @@ class DashboardSummary {
 // ─── Service ───────────────────────────────────────
 
 class DashboardService {
-  static const String _baseUrl = 'http://10.0.2.2:8000';
+  String get _baseUrl => AppConfig.backendUrl;
+
+  Map<String, String> get _headers {
+    final headers = <String, String>{'Content-Type': 'application/json'};
+    final token = AuthService.accessToken;
+    if (token != null) headers['Authorization'] = 'Bearer $token';
+    return headers;
+  }
 
   /// Fetch dashboard summary from backend.
   /// Falls back to DemoData if backend is unreachable.
-  Future<DashboardSummary> getSummary({String userId = 'demo-user', String? authToken}) async {
+  Future<DashboardSummary> getSummary() async {
     try {
-      final headers = <String, String>{'Content-Type': 'application/json'};
-      if (authToken != null) {
-        headers['Authorization'] = 'Bearer $authToken';
-      }
-
       final response = await http.get(
         Uri.parse('$_baseUrl/api/v1/dashboard/summary'),
-        headers: headers,
+        headers: _headers,
       ).timeout(Duration(seconds: 10));
 
       if (response.statusCode == 200) {
@@ -174,16 +178,11 @@ class DashboardService {
 
   /// Complete a task and earn XP.
   /// Returns (xpEarned, newTotalXp) or null on failure.
-  Future<(int, int)?> completeTask(String taskId, {String? authToken}) async {
+  Future<(int, int)?> completeTask(String taskId) async {
     try {
-      final headers = <String, String>{'Content-Type': 'application/json'};
-      if (authToken != null) {
-        headers['Authorization'] = 'Bearer $authToken';
-      }
-
       final response = await http.post(
         Uri.parse('$_baseUrl/api/v1/dashboard/claim-task/$taskId'),
-        headers: headers,
+        headers: _headers,
       ).timeout(Duration(seconds: 10));
 
       if (response.statusCode == 200) {

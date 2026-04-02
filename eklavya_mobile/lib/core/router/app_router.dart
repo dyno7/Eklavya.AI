@@ -6,6 +6,7 @@ import '../widgets/gradient_background.dart';
 
 import '../../features/analytics/analytics_tab.dart';
 import '../../features/auth/login_screen.dart';
+import '../../features/auth/signup_screen.dart';
 import '../../features/chat/chat_tab.dart';
 import '../../features/dashboard/home_tab.dart';
 import '../../features/goals/goals_tab.dart';
@@ -44,6 +45,14 @@ final GoRouter appRouter = GoRouter(
         context: context,
         state: state,
         child: OnboardingScreen(),
+      ),
+    ),
+    GoRoute(
+      path: '/signup',
+      pageBuilder: (context, state) => fadeSlideTransition(
+        context: context,
+        state: state,
+        child: SignupScreen(),
       ),
     ),
 

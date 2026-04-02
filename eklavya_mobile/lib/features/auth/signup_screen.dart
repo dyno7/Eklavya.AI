@@ -11,17 +11,18 @@ import '../../core/widgets/glass_card.dart';
 import '../../core/widgets/gradient_background.dart';
 import '../../core/widgets/gradient_button.dart';
 
-/// Login screen with dark glassmorphism styling and dummy auth.
-class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+/// Sign-up screen with real Supabase email/password auth.
+class SignupScreen extends StatefulWidget {
+  const SignupScreen({super.key});
 
   @override
-  State<LoginScreen> createState() => _LoginScreenState();
+  State<SignupScreen> createState() => _SignupScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
-  final _emailController = TextEditingController(text: '');
-  final _passwordController = TextEditingController(text: '');
+class _SignupScreenState extends State<SignupScreen> {
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _nameController = TextEditingController();
   bool _obscurePassword = true;
   bool _isLoading = false;
 
@@ -29,23 +30,31 @@ class _LoginScreenState extends State<LoginScreen> {
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _nameController.dispose();
     super.dispose();
   }
 
-  Future<void> _handleLogin() async {
+  Future<void> _handleSignup() async {
     final email = _emailController.text.trim();
     final password = _passwordController.text;
+    final name = _nameController.text.trim();
 
-    if (email.isEmpty || password.isEmpty) {
+    if (email.isEmpty || password.isEmpty || name.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Enter email and password')),
+        SnackBar(content: Text('All fields are required')),
+      );
+      return;
+    }
+    if (password.length < 6) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Password must be at least 6 characters')),
       );
       return;
     }
 
     setState(() => _isLoading = true);
     try {
-      await AuthService.signIn(email, password);
+      await AuthService.signUp(email, password);
       if (!mounted) return;
       context.go('/home');
     } on AuthException catch (e) {
@@ -86,14 +95,13 @@ class _LoginScreenState extends State<LoginScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 SizedBox(height: 60),
-                // ─── Header ───
                 Text(
-                  'Welcome Back',
+                  'Create Account',
                   style: Theme.of(context).textTheme.displayLarge,
                 ),
                 SizedBox(height: AppSpacing.sm),
                 Text(
-                  'Sign in to continue your journey',
+                  'Start your learning journey today',
                   style: Theme.of(context)
                       .textTheme
                       .bodyLarge
@@ -101,70 +109,59 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 SizedBox(height: AppSpacing.xxxl),
 
-                // ─── Form card ───
                 GlassCard(
                   padding: EdgeInsets.all(AppSpacing.xl),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      // Email
-                      Text(
-                        'Email',
-                        style: Theme.of(context)
-                            .textTheme
-                            .labelLarge
-                            ?.copyWith(color: context.colors.textSecondary),
+                      // Name
+                      Text('Name', style: Theme.of(context).textTheme.labelLarge?.copyWith(color: context.colors.textSecondary)),
+                      SizedBox(height: AppSpacing.sm),
+                      TextField(
+                        controller: _nameController,
+                        style: TextStyle(color: context.colors.textPrimary),
+                        decoration: InputDecoration(
+                          hintText: 'Your name',
+                          prefixIcon: Icon(Icons.person_outline, color: context.colors.textTertiary),
+                        ),
                       ),
+                      SizedBox(height: AppSpacing.xl),
+                      // Email
+                      Text('Email', style: Theme.of(context).textTheme.labelLarge?.copyWith(color: context.colors.textSecondary)),
                       SizedBox(height: AppSpacing.sm),
                       TextField(
                         controller: _emailController,
                         keyboardType: TextInputType.emailAddress,
-                        style:
-                            TextStyle(color: context.colors.textPrimary),
+                        style: TextStyle(color: context.colors.textPrimary),
                         decoration: InputDecoration(
-                          hintText: 'admin@gmail.com',
-                          prefixIcon: Icon(Icons.email_outlined,
-                              color: context.colors.textTertiary),
+                          hintText: 'you@example.com',
+                          prefixIcon: Icon(Icons.email_outlined, color: context.colors.textTertiary),
                         ),
                       ),
                       SizedBox(height: AppSpacing.xl),
-
                       // Password
-                      Text(
-                        'Password',
-                        style: Theme.of(context)
-                            .textTheme
-                            .labelLarge
-                            ?.copyWith(color: context.colors.textSecondary),
-                      ),
+                      Text('Password', style: Theme.of(context).textTheme.labelLarge?.copyWith(color: context.colors.textSecondary)),
                       SizedBox(height: AppSpacing.sm),
                       TextField(
                         controller: _passwordController,
                         obscureText: _obscurePassword,
-                        style:
-                            TextStyle(color: context.colors.textPrimary),
+                        style: TextStyle(color: context.colors.textPrimary),
                         decoration: InputDecoration(
-                          hintText: '••••••',
-                          prefixIcon: Icon(Icons.lock_outline,
-                              color: context.colors.textTertiary),
+                          hintText: '6+ characters',
+                          prefixIcon: Icon(Icons.lock_outline, color: context.colors.textTertiary),
                           suffixIcon: IconButton(
                             icon: Icon(
-                              _obscurePassword
-                                  ? Icons.visibility_off_outlined
-                                  : Icons.visibility_outlined,
+                              _obscurePassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
                               color: context.colors.textTertiary,
                             ),
-                            onPressed: () => setState(
-                                () => _obscurePassword = !_obscurePassword),
+                            onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
                           ),
                         ),
                       ),
                       SizedBox(height: AppSpacing.xxl),
-
-                      // Sign In button
                       GradientButton(
-                        label: 'Sign In',
-                        onPressed: _isLoading ? null : _handleLogin,
+                        label: 'Create Account',
+                        onPressed: _isLoading ? null : _handleSignup,
                         isLoading: _isLoading,
                         isExpanded: true,
                         icon: Icons.arrow_forward_rounded,
@@ -173,38 +170,16 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
                 SizedBox(height: AppSpacing.xl),
-
-                // ─── Divider ───
-                Row(
-                  children: [
-                    Expanded(child: Divider(color: context.colors.glassBorder)),
-                    Padding(
-                      padding: EdgeInsets.symmetric(
-                          horizontal: AppSpacing.lg),
-                      child: Text(
-                        'Or continue with',
-                        style: Theme.of(context)
-                            .textTheme
-                            .labelMedium
-                            ?.copyWith(color: context.colors.textTertiary),
-                      ),
-                    ),
-                    Expanded(child: Divider(color: context.colors.glassBorder)),
-                  ],
-                ),
-                SizedBox(height: AppSpacing.xl),
-
-                // ─── Sign Up link ───
                 Center(
                   child: TextButton(
-                    onPressed: () => context.push('/signup'),
+                    onPressed: () => context.pop(),
                     child: RichText(
                       text: TextSpan(
                         style: TextStyle(color: context.colors.textSecondary),
                         children: [
-                          TextSpan(text: "Don't have an account? "),
+                          TextSpan(text: 'Already have an account? '),
                           TextSpan(
-                            text: 'Sign Up',
+                            text: 'Sign In',
                             style: TextStyle(
                               color: context.colors.primaryLight,
                               fontWeight: FontWeight.bold,

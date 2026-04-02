@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/services/auth_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/gradient_background.dart';
 
@@ -19,9 +20,9 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    // Auto-navigate after branding moment
+    // Auto-navigate — skip login if session exists
     Timer(Duration(milliseconds: 2500), () {
-      if (mounted) context.go('/login');
+      if (mounted) context.go(AuthService.isLoggedIn ? '/home' : '/login');
     });
   }
 

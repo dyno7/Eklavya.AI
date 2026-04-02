@@ -11,7 +11,7 @@ import '../../core/widgets/glass_card.dart';
 import '../../core/widgets/gradient_background.dart';
 import '../../core/widgets/gradient_button.dart';
 
-/// Login screen with dark glassmorphism styling and dummy auth.
+/// Login screen with real Supabase auth + Google OAuth.
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -27,10 +27,25 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   void dispose() {
+    _authSub?.cancel();
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
+
+  @override
+  void initState() {
+    super.initState();
+    // Listen for OAuth redirect (Google sign-in returning)
+    _authSub = AuthService.onAuthStateChange.listen((data) {
+      if (data.event == AuthChangeEvent.signedIn && mounted) {
+        context.go('/home');
+      }
+    });
+  }
+
+  // ignore: cancel_subscriptions
+  dynamic _authSub;
 
   Future<void> _handleLogin() async {
     final email = _emailController.text.trim();
@@ -122,7 +137,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         style:
                             TextStyle(color: context.colors.textPrimary),
                         decoration: InputDecoration(
-                          hintText: 'admin@gmail.com',
+                          hintText: 'you@example.com',
                           prefixIcon: Icon(Icons.email_outlined,
                               color: context.colors.textTertiary),
                         ),
@@ -194,6 +209,25 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 SizedBox(height: AppSpacing.xl),
 
+                // ─── Google Sign In ───
+                _GoogleSignInButton(
+                  onTap: () async {
+                    setState(() => _isLoading = true);
+                    try {
+                      await AuthService.signInWithGoogle();
+                      // Navigation happens via auth state listener above
+                    } catch (e) {
+                      if (!mounted) return;
+                      setState(() => _isLoading = false);
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Google sign-in failed. Try again.')),
+                      );
+                    }
+                  },
+                ),
+                SizedBox(height: AppSpacing.xl),
+
                 // ─── Sign Up link ───
                 Center(
                   child: TextButton(
@@ -225,5 +259,43 @@ class _LoginScreenState extends State<LoginScreen> {
         .animate()
         .fadeIn(duration: 500.ms)
         .slideY(begin: 0.05, end: 0, duration: 500.ms);
+  }
+}
+
+class _GoogleSignInButton extends StatelessWidget {
+  const _GoogleSignInButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: AppRadii.lg,
+      child: Container(
+        height: 52,
+        decoration: BoxDecoration(
+          color: context.colors.surface,
+          borderRadius: AppRadii.lg,
+          border: Border.all(color: context.colors.glassBorder),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.g_mobiledata_rounded,
+                color: context.colors.textSecondary, size: 28),
+            SizedBox(width: AppSpacing.sm),
+            Text(
+              'Continue with Google',
+              style: TextStyle(
+                color: context.colors.textSecondary,
+                fontWeight: FontWeight.w600,
+                fontSize: 15,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

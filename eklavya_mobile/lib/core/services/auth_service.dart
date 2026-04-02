@@ -51,4 +51,21 @@ class AuthService {
 
   /// Sign out and clear session.
   static Future<void> signOut() => _client.auth.signOut();
+
+  /// Sign in with Google OAuth.
+  /// On web: opens Google login in a popup/redirect.
+  /// On mobile: opens Google login in the system browser.
+  /// After successful auth, Supabase stores the session automatically.
+  static Future<bool> signInWithGoogle() async {
+    final success = await _client.auth.signInWithOAuth(
+      OAuthProvider.google,
+      redirectTo: 'io.supabase.eklavya://login-callback/',
+    );
+    return success;
+  }
+
+  /// Listen for auth state changes (e.g., OAuth redirect completing).
+  /// Returns a subscription that should be cancelled on dispose.
+  static Stream<AuthState> get onAuthStateChange =>
+      _client.auth.onAuthStateChange;
 }

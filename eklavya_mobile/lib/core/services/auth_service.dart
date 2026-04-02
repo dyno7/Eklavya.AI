@@ -6,7 +6,6 @@ class AuthService {
   static SupabaseClient get _client => Supabase.instance.client;
 
   /// The current session's access token (JWT).
-  /// Returns null if not logged in.
   static String? get accessToken =>
       _client.auth.currentSession?.accessToken;
 
@@ -19,13 +18,36 @@ class AuthService {
   /// The user's Supabase UUID.
   static String get userId => currentUser?.id ?? 'anonymous';
 
+  /// Display name from user metadata.
+  static String get displayName =>
+      currentUser?.userMetadata?['display_name'] as String? ??
+      currentUser?.email?.split('@').first ??
+      'Learner';
+
   /// Sign in with email + password.
   static Future<AuthResponse> signIn(String email, String password) =>
       _client.auth.signInWithPassword(email: email, password: password);
 
   /// Create a new account with email + password.
-  static Future<AuthResponse> signUp(String email, String password) =>
-      _client.auth.signUp(email: email, password: password);
+  /// Sets display_name in user metadata.
+  /// Returns (AuthResponse, needsEmailConfirmation)
+  static Future<(AuthResponse, bool)> signUp(
+    String email,
+    String password, {
+    String? displayName,
+  }) async {
+    final response = await _client.auth.signUp(
+      email: email,
+      password: password,
+      data: displayName != null ? {'display_name': displayName} : null,
+    );
+
+    // If Supabase has "Confirm email" enabled, session will be null
+    // after signup. The user exists but can't log in until confirmed.
+    final needsConfirmation = response.session == null && response.user != null;
+
+    return (response, needsConfirmation);
+  }
 
   /// Sign out and clear session.
   static Future<void> signOut() => _client.auth.signOut();

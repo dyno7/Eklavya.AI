@@ -3,6 +3,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/services/auth_service.dart';
 import '../../core/data/demo_data.dart';
 import '../../core/providers/theme_provider.dart';
 import '../../core/theme/app_colors.dart';
@@ -17,6 +18,7 @@ class ProfileTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final user = DemoData.user;
+    final displayName = AuthService.isLoggedIn ? AuthService.displayName : user.displayName;
     final themeMode = ref.watch(themeModeProvider);
 
     return Scaffold(
@@ -47,13 +49,13 @@ class ProfileTab extends ConsumerWidget {
                       ),
                       child: Center(
                         child: Text(
-                          user.displayName[0],
+                          displayName.isNotEmpty ? displayName[0].toUpperCase() : '?',
                           style: theme.textTheme.displayLarge?.copyWith(color: Colors.white),
                         ),
                       ),
                     ),
                     SizedBox(height: AppSpacing.lg),
-                    Text(user.displayName, style: theme.textTheme.headlineMedium),
+                    Text(displayName, style: theme.textTheme.headlineMedium),
                     SizedBox(height: 4),
                     Text('Level ${user.level} • ${user.totalXp} XP', style: theme.textTheme.bodyLarge?.copyWith(color: context.colors.textSecondary)),
                     SizedBox(height: AppSpacing.lg),
@@ -154,9 +156,9 @@ class ProfileTab extends ConsumerWidget {
                     ListTile(
                       leading: Icon(Icons.logout_rounded, color: context.colors.error),
                       title: Text('Sign Out', style: TextStyle(color: context.colors.error, fontWeight: FontWeight.w600)),
-                      onTap: () {
-                        // Dummy sign out
-                        context.go('/login');
+                      onTap: () async {
+                        await AuthService.signOut();
+                        if (context.mounted) context.go('/login');
                       },
                     ),
                   ],

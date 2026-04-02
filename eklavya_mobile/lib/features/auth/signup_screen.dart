@@ -54,8 +54,42 @@ class _SignupScreenState extends State<SignupScreen> {
 
     setState(() => _isLoading = true);
     try {
-      await AuthService.signUp(email, password);
+      final (_, needsConfirmation) =
+          await AuthService.signUp(email, password, displayName: name);
+
       if (!mounted) return;
+
+      if (needsConfirmation) {
+        // Email confirmation is enabled in Supabase.
+        // User can't log in yet — take them back to login with a message.
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Account created! Check your email to verify, then sign in.',
+            ),
+            duration: Duration(seconds: 5),
+            backgroundColor: context.colors.success,
+          ),
+        );
+        // Auto-sign-in: Supabase created the user. If "Confirm email" is OFF
+        // in dashboard, this acts as a no-op message. If ON, user sees it.
+        // Either way, try signing in immediately — it works if confirm is OFF.
+        try {
+          await AuthService.signIn(email, password);
+          if (!mounted) return;
+          context.go('/home');
+          return;
+        } catch (_) {
+          // Confirm is ON and user hasn't confirmed yet —
+          // navigate to login so they can try after confirming.
+          if (!mounted) return;
+          context.go('/login');
+          return;
+        }
+      }
+
+      // Session exists — account created and auto-logged-in
       context.go('/home');
     } on AuthException catch (e) {
       if (!mounted) return;

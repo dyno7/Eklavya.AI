@@ -137,3 +137,34 @@ class TaskResponse(BaseModel):
 class TaskStatusUpdate(BaseModel):
     """Update only the status of a task."""
     status: TaskStatus
+
+
+# ─── Badges ───────────────────────────────────────────────────
+
+class BadgeResponse(BaseModel):
+    """A badge with user-specific earned status."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    name: str
+    description: str
+    icon_url: Optional[str] = None
+    required_xp: int
+    is_earned: bool = False
+    earned_at: Optional[datetime] = None
+
+
+# ─── Notifications ────────────────────────────────────────────
+
+class NotificationResponse(BaseModel):
+    """System notification for a user."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    user_id: UUID
+    title: str
+    message: str
+    type: str # 'level_up', 'badge_earned', 'reminder'
+    read_status: bool
+    created_at: datetime
+

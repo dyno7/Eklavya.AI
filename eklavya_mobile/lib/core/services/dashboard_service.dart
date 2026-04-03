@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../config/app_config.dart';
@@ -170,10 +171,20 @@ class DashboardService {
       if (response.statusCode == 200) {
         return DashboardSummary.fromJson(jsonDecode(response.body));
       }
-    } catch (_) {
-      // Backend unreachable — return demo data
+    } catch (e) {
+      debugPrint('Dashboard API error: $e');
     }
-    return DashboardSummary.demo();
+    // Return an empty skeleton instead of demo data
+    return DashboardSummary(
+      user: UserStats(
+        displayName: AuthService.displayName,
+        totalXp: 0,
+        currentStreak: 0,
+      ),
+      activeGoal: null,
+      currentMilestone: null,
+      pendingTasks: [],
+    );
   }
 
   /// Complete a task and earn XP.

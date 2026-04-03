@@ -4,21 +4,50 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/services/auth_service.dart';
-import '../../core/data/demo_data.dart';
+import '../../core/services/dashboard_service.dart';
 import '../../core/providers/theme_provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_radii.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/widgets/glass_card.dart';
 
-class ProfileTab extends ConsumerWidget {
+class ProfileTab extends ConsumerStatefulWidget {
   const ProfileTab({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ProfileTab> createState() => _ProfileTabState();
+}
+
+class _ProfileTabState extends ConsumerState<ProfileTab> {
+  final _dashboardService = DashboardService();
+  UserStats? _userStats;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchStats();
+  }
+
+  Future<void> _fetchStats() async {
+    final summary = await _dashboardService.getSummary();
+    if (!mounted) return;
+    setState(() {
+      _userStats = summary.user;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_userStats == null) {
+      return Scaffold(
+        backgroundColor: Colors.transparent,
+        body: Center(child: CircularProgressIndicator(color: Theme.of(context).colorScheme.primary)),
+      );
+    }
+    
     final theme = Theme.of(context);
-    final user = DemoData.user;
-    final displayName = AuthService.isLoggedIn ? AuthService.displayName : user.displayName;
+    final userStats = _userStats!;
+    final displayName = userStats.displayName.isNotEmpty ? userStats.displayName : 'User';
     final themeMode = ref.watch(themeModeProvider);
 
     return Scaffold(
@@ -57,7 +86,7 @@ class ProfileTab extends ConsumerWidget {
                     SizedBox(height: AppSpacing.lg),
                     Text(displayName, style: theme.textTheme.headlineMedium),
                     SizedBox(height: 4),
-                    Text('Level ${user.level} • ${user.totalXp} XP', style: theme.textTheme.bodyLarge?.copyWith(color: context.colors.textSecondary)),
+                    Text('Level ${(userStats.totalXp ~/ 100) + 1} • ${userStats.totalXp} XP', style: theme.textTheme.bodyLarge?.copyWith(color: context.colors.textSecondary)),
                     SizedBox(height: AppSpacing.lg),
                     OutlinedButton(
                       onPressed: () {},

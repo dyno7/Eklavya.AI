@@ -1,14 +1,37 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
-import '../../core/data/demo_data.dart';
+import '../../core/services/dashboard_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_radii.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/widgets/glass_card.dart';
 
-class AnalyticsTab extends StatelessWidget {
+class AnalyticsTab extends StatefulWidget {
   const AnalyticsTab({super.key});
+
+  @override
+  State<AnalyticsTab> createState() => _AnalyticsTabState();
+}
+
+class _AnalyticsTabState extends State<AnalyticsTab> {
+  final _dashboardService = DashboardService();
+  UserStats? _userStats;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchStats();
+  }
+
+  Future<void> _fetchStats() async {
+    final summary = await _dashboardService.getSummary();
+    if (!mounted) return;
+    setState(() {
+      _userStats = summary.user;
+    });
+  }
 
   // Distinct domain colors (semantic, not theme-dependent)
   static const _domainColors = {
@@ -19,8 +42,19 @@ class AnalyticsTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (_userStats == null) {
+      return Scaffold(
+        backgroundColor: Colors.transparent,
+        body: Center(child: CircularProgressIndicator(color: Theme.of(context).colorScheme.primary)),
+      );
+    }
+    
     final theme = Theme.of(context);
-    final analytics = DemoData.analytics;
+    final userStats = _userStats!;
+    
+    // Placeholder analytics data (will be wired to backend in Phase 7)
+    final weeklyXp = [0, 0, 0, 0, 0, 0, 0];
+    final domainDistribution = <String, double>{};
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -45,7 +79,7 @@ class AnalyticsTab extends StatelessWidget {
                     Text('This Week', style: theme.textTheme.titleMedium),
                     SizedBox(height: AppSpacing.xs),
                     Text(
-                      '${analytics.weeklyXp.fold<int>(0, (a,b) => a + b)} XP',
+                      '0 XP',
                       style: theme.textTheme.headlineMedium?.copyWith(
                         color: context.colors.accent,
                         fontWeight: FontWeight.bold,
@@ -54,12 +88,16 @@ class AnalyticsTab extends StatelessWidget {
                     SizedBox(height: AppSpacing.xl),
                     SizedBox(
                       height: 170,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        crossAxisAlignment: CrossAxisAlignment.end,
+                      child: domainDistribution.isEmpty
+                          ? Center(
+                              child: Text('No domain data yet\nStart a roadmap!', 
+                                textAlign: TextAlign.center,
+                                style: theme.textTheme.bodyMedium?.copyWith(color: context.colors.textSecondary)),
+                            )
+                          : Stack(
                         children: List.generate(7, (i) {
-                          final maxWeeklyXp = analytics.weeklyXp.reduce((a, b) => a > b ? a : b).toDouble();
-                          final heightRatio = maxWeeklyXp > 0 ? analytics.weeklyXp[i] / maxWeeklyXp : 0.0;
+                          final maxWeeklyXp = weeklyXp.reduce((a, b) => a > b ? a : b).toDouble();
+                          final heightRatio = maxWeeklyXp > 0 ? weeklyXp[i] / maxWeeklyXp : 0.0;
                           final isToday = i == 6;
                           final days = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
                           final barHeight = 120 * heightRatio + 4;
@@ -68,7 +106,7 @@ class AnalyticsTab extends StatelessWidget {
                             children: [
                               // Value label above bar
                               Text(
-                                '${analytics.weeklyXp[i]}',
+                                '${weeklyXp[i]}',
                                 style: theme.textTheme.labelSmall?.copyWith(
                                   color: isToday ? context.colors.primaryLight : context.colors.textTertiary,
                                   fontWeight: isToday ? FontWeight.bold : FontWeight.normal,
@@ -123,13 +161,13 @@ class AnalyticsTab extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Current Streak: ${DemoData.user.currentStreak} days 🔥', style: theme.textTheme.titleMedium),
-                    SizedBox(height: AppSpacing.lg),
+                    Text('Current Streak: ${userStats.currentStreak} days 🔥', style: theme.textTheme.titleMedium),
+                    SizedBox(height: AppSpacing.md),
                     Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
+                      spacing: 6,
+                      runSpacing: 6,
                       children: List.generate(30, (i) {
-                        final isCompleted = i >= 30 - DemoData.user.currentStreak;
+                        final isCompleted = i >= 30 - userStats.currentStreak;
                         final isToday = i == 29;
                         final color = isCompleted ? context.colors.success : context.colors.surfaceLight;
                         
@@ -157,7 +195,7 @@ class AnalyticsTab extends StatelessWidget {
                   children: [
                     Text('Learning Focus', style: theme.textTheme.titleMedium),
                     SizedBox(height: AppSpacing.xl),
-                    ...analytics.domainDistribution.entries.map((e) {
+                    ...domainDistribution.entries.map((e) {
                       final domain = e.key;
                       final percent = (e.value * 100).toInt();
                       final color = _domainColors[domain] ?? context.colors.accent;
@@ -174,9 +212,9 @@ class AnalyticsTab extends StatelessWidget {
                                   children: [
                                     Container(
                                       width: 10,
-                                      height: 10,
+                                      height: math.max(8, 0.0),
                                       decoration: BoxDecoration(
-                                        color: color,
+                                        color: Colors.transparent,
                                         shape: BoxShape.circle,
                                       ),
                                     ),

@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agents.guru_agent import GuruAgent
 from app.agents.roadmap_persistence import persist_roadmap
 from app.core.database import get_db
+from app.core import repositories as repo
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 logger = logging.getLogger(__name__)
@@ -69,6 +70,11 @@ async def send_message(
         # Persist the roadmap to the database
         try:
             user_uuid = uuid.UUID(request.user_id)
+            # Ensure user exists before creating a Goal to prevent FK violations
+            user = await repo.get_user_profile(db, user_uuid)
+            if user is None:
+                await repo.upsert_user_profile(db, user_uuid, display_name="User")
+            
             goal_id_uuid = await persist_roadmap(db, user_uuid, agent.roadmap)
             goal_id = str(goal_id_uuid)
             logger.info(f"Roadmap persisted as goal {goal_id}")

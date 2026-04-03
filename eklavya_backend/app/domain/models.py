@@ -19,6 +19,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSON, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.schema import UniqueConstraint
 
 from app.core.database import Base
 from app.domain.enums import (
@@ -57,6 +58,12 @@ class User(Base):
 
     # Relationships
     goals: Mapped[list["Goal"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    user_badges: Mapped[list["UserBadge"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    notifications: Mapped[list["Notification"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
 
@@ -182,3 +189,81 @@ class Task(Base):
 
     def __repr__(self) -> str:
         return f"<Task {self.id} '{self.title}' [{self.status.value}]>"
+
+
+class Badge(Base):
+    """Master table for available badges."""
+
+    __tablename__ = "badges"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    name: Mapped[str] = mapped_column(String(255))
+    description: Mapped[str] = mapped_column(Text)
+    icon_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    required_xp: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()")
+    )
+
+    user_badges: Mapped[list["UserBadge"]] = relationship(
+        back_populates="badge", cascade="all, delete-orphan"
+    )
+
+    def __repr__(self) -> str:
+        return f"<Badge {self.id} '{self.name}'>"
+
+
+class UserBadge(Base):
+    """Link table representing a badge earned by a user."""
+
+    __tablename__ = "user_badges"
+    __table_args__ = (UniqueConstraint("user_id", "badge_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    badge_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("badges.id", ondelete="CASCADE"), index=True
+    )
+    earned_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()")
+    )
+
+    user: Mapped["User"] = relationship(back_populates="user_badges")
+    badge: Mapped["Badge"] = relationship(back_populates="user_badges")
+
+    def __repr__(self) -> str:
+        return f"<UserBadge User:{self.user_id} Badge:{self.badge_id}>"
+
+
+class Notification(Base):
+    """System notifications for a user."""
+
+    __tablename__ = "notifications"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    title: Mapped[str] = mapped_column(String(255))
+    message: Mapped[str] = mapped_column(Text)
+    type: Mapped[str] = mapped_column(String(50))
+    read_status: Mapped[bool] = mapped_column(
+        "read_status", default=False, server_default=text("false")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()")
+    )
+
+    user: Mapped["User"] = relationship(back_populates="notifications")
+
+    def __repr__(self) -> str:
+        return f"<Notification {self.id} User:{self.user_id} [Read:{self.read_status}]>"
+

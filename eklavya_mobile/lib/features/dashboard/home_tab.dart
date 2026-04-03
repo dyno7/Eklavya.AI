@@ -3,6 +3,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lottie/lottie.dart';
 
+import '../../core/services/auth_service.dart';
 import '../../core/services/dashboard_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_radii.dart';
@@ -90,8 +91,17 @@ class _HomeTabState extends State<HomeTab> {
 
   @override
   Widget build(BuildContext context) {
+    if (_data == null) {
+      return Scaffold(
+        backgroundColor: Colors.transparent,
+        body: Center(
+          child: CircularProgressIndicator(color: context.colors.primary),
+        ),
+      );
+    }
+    
     final theme = Theme.of(context);
-    final data = _data ?? DashboardSummary.demo();
+    final data = _data!;
     final priorityGoal = data.activeGoal;
     final userStats = data.user;
     
@@ -169,7 +179,7 @@ class _HomeTabState extends State<HomeTab> {
                       ),
                       child: Center(
                         child: Text(
-                          (userStats.displayName.isNotEmpty ? userStats.displayName[0] : 'U'),
+                          (userStats.displayName.isNotEmpty ? userStats.displayName[0] : 'U').toUpperCase(),
                           style: TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.bold,
@@ -265,22 +275,25 @@ class _HomeTabState extends State<HomeTab> {
                           '${priorityGoal.totalMilestones > 0 ? ((priorityGoal.completedMilestones / priorityGoal.totalMilestones) * 100).toInt() : 0}% complete',
                           style: theme.textTheme.labelSmall?.copyWith(color: context.colors.textSecondary),
                         ),
-                        Container(
-                          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                          decoration: BoxDecoration(
-                            gradient: context.colors.primaryGradient,
-                            borderRadius: AppRadii.pill,
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                'Continue',
-                                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
-                              ),
-                              SizedBox(width: 4),
-                              Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 16),
-                            ],
+                        GestureDetector(
+                          onTap: () => context.go('/goals'),
+                          child: Container(
+                            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            decoration: BoxDecoration(
+                              gradient: context.colors.primaryGradient,
+                              borderRadius: AppRadii.pill,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  'Continue',
+                                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
+                                ),
+                                SizedBox(width: 4),
+                                Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 16),
+                              ],
+                            ),
                           ),
                         ),
                       ],
@@ -289,16 +302,19 @@ class _HomeTabState extends State<HomeTab> {
                 ),
               ).animate().fadeIn().slideY(begin: 0.1, end: 0, duration: 500.ms),
               if (priorityGoal == null)
-              GlassCard(
-                padding: EdgeInsets.all(AppSpacing.xl),
-                child: Column(
-                  children: [
-                    Icon(Icons.rocket_launch_rounded, size: 48, color: context.colors.textTertiary),
-                    SizedBox(height: AppSpacing.md),
-                    Text('No active goal yet', style: theme.textTheme.titleMedium?.copyWith(color: context.colors.textSecondary)),
-                    SizedBox(height: AppSpacing.sm),
-                    Text('Chat with the Guru to create your roadmap!', style: theme.textTheme.bodySmall?.copyWith(color: context.colors.textTertiary)),
-                  ],
+              GestureDetector(
+                onTap: () => context.go('/chat'),
+                child: GlassCard(
+                  padding: EdgeInsets.all(AppSpacing.xl),
+                  child: Column(
+                    children: [
+                      Icon(Icons.rocket_launch_rounded, size: 48, color: context.colors.primaryLight),
+                      SizedBox(height: AppSpacing.md),
+                      Text('No active goal yet', style: theme.textTheme.titleMedium?.copyWith(color: context.colors.primaryLight, fontWeight: FontWeight.bold)),
+                      SizedBox(height: AppSpacing.sm),
+                      Text('Tap to chat with the Guru and create your roadmap!', style: theme.textTheme.bodySmall?.copyWith(color: context.colors.textSecondary)),
+                    ],
+                  ),
                 ),
               ).animate().fadeIn().slideY(begin: 0.1, end: 0, duration: 500.ms),
               
@@ -429,6 +445,14 @@ class _HomeTabState extends State<HomeTab> {
               ),
               SizedBox(height: AppSpacing.md),
               
+              if (data.pendingTasks.isEmpty)
+                Padding(
+                  padding: EdgeInsets.symmetric(vertical: AppSpacing.xl),
+                  child: Center(
+                    child: Text('No tasks pending! You\'re all caught up. 🎉', style: theme.textTheme.bodyMedium?.copyWith(color: context.colors.textSecondary)),
+                  ),
+                )
+              else
               ...data.pendingTasks.asMap().entries.map((entry) {
                 final idx = entry.key;
                 final task = entry.value;

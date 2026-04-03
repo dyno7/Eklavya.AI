@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import get_current_user_id
 from app.core.database import get_db
 from app.core import repositories as repo
-from app.domain.schemas import UserResponse, UserUpdate
+from app.domain.schemas import BadgeResponse, UserResponse, UserUpdate
 
 router = APIRouter(prefix="/api/v1/users", tags=["Users"])
 
@@ -42,3 +42,13 @@ async def update_my_profile(
         avatar_url=body.avatar_url,
     )
     return user
+
+
+@router.get("/me/badges", response_model=list[BadgeResponse])
+async def get_my_badges(
+    db: AsyncSession = Depends(get_db),
+    current_user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Get the authenticated user's badges (both earned and unearned)."""
+    badges = await repo.get_user_badges_status(db, current_user_id)
+    return badges

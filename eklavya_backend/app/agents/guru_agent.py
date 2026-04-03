@@ -31,7 +31,7 @@ class GuruAgent:
         if settings.GEMINI_API_KEY:
             genai.configure(api_key=settings.GEMINI_API_KEY)
             self._model = genai.GenerativeModel(
-                model_name="gemini-2.0-flash",
+                model_name="gemini-2.5-flash",
                 system_instruction=self._system_prompt,
             )
             self._chat = self._model.start_chat(history=[])

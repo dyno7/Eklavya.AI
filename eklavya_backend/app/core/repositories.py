@@ -8,11 +8,11 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import select, update
+from sqlalchemy import select, update, outerjoin, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.enums import TaskStatus
-from app.domain.models import Goal, Milestone, Task, User
+from app.domain.models import Badge, Goal, Milestone, Notification, Task, User, UserBadge
 
 
 # ─── Users ─────────────────────────────────────────────────────
@@ -203,3 +203,62 @@ async def update_task_status(
     )
     await db.commit()
     return await get_task_by_id(db, task_id)
+
+
+# ─── Badges ───────────────────────────────────────────────────
+
+async def get_user_badges_status(db: AsyncSession, user_id: uuid.UUID) -> list[dict]:
+    """
+    Get all available badges from the system, along with a boolean indicating
+    if the specified user has earned them, and when.
+    Returns a list of dicts matching the BadgeResponse schema.
+    """
+    # Query: SELECT b.*, ub.earned_at FROM badges b LEFT JOIN user_badges ub ON b.id = ub.badge_id AND ub.user_id = :user_id
+    stmt = (
+        select(Badge, UserBadge.earned_at)
+        .outerjoin(
+            UserBadge,
+            (Badge.id == UserBadge.badge_id) & (UserBadge.user_id == user_id)
+        )
+        .order_by(Badge.required_xp.asc())
+    )
+    result = await db.execute(stmt)
+    rows = result.all()
+    
+    response_list = []
+    for badge, earned_at in rows:
+        response_list.append({
+            "id": badge.id,
+            "name": badge.name,
+            "description": badge.description,
+            "icon_url": badge.icon_url,
+            "required_xp": badge.required_xp,
+            "is_earned": earned_at is not None,
+            "earned_at": earned_at
+        })
+    return response_list
+
+
+# ─── Notifications ────────────────────────────────────────────
+
+async def get_notifications_for_user(db: AsyncSession, user_id: uuid.UUID, limit: int = 50) -> list[Notification]:
+    """Get recent notifications for a user, newest first."""
+    result = await db.execute(
+        select(Notification)
+        .where(Notification.user_id == user_id)
+        .order_by(Notification.created_at.desc())
+        .limit(limit)
+    )
+    return list(result.scalars().all())
+
+async def mark_notification_read(db: AsyncSession, notification_id: uuid.UUID, user_id: uuid.UUID) -> Optional[Notification]:
+    """Mark a specific notification as read. Validates user ownership."""
+    stmt = (
+        update(Notification)
+        .where((Notification.id == notification_id) & (Notification.user_id == user_id))
+        .values(read_status=True)
+        .returning(Notification)
+    )
+    result = await db.execute(stmt)
+    await db.commit()
+    return result.scalar_one_or_none()

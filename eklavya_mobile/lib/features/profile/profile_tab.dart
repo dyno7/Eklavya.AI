@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/services/auth_service.dart';
 import '../../core/services/dashboard_service.dart';
+import '../../core/services/user_service.dart';
 import '../../core/providers/theme_provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_radii.dart';
@@ -20,19 +21,26 @@ class ProfileTab extends ConsumerStatefulWidget {
 
 class _ProfileTabState extends ConsumerState<ProfileTab> {
   final _dashboardService = DashboardService();
+  final _userService = UserService();
   UserStats? _userStats;
+  List<BadgeItem>? _badges;
 
   @override
   void initState() {
     super.initState();
-    _fetchStats();
+    _fetchData();
   }
 
-  Future<void> _fetchStats() async {
-    final summary = await _dashboardService.getSummary();
+  Future<void> _fetchData() async {
+    final summaryFuture = _dashboardService.getSummary();
+    final badgesFuture = _userService.getMyBadges();
+    
+    final results = await Future.wait([summaryFuture, badgesFuture]);
     if (!mounted) return;
+    
     setState(() {
-      _userStats = summary.user;
+      _userStats = (results[0] as DashboardSummary).user;
+      _badges = results[1] as List<BadgeItem>;
     });
   }
 
@@ -59,6 +67,21 @@ class _ProfileTabState extends ConsumerState<ProfileTab> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               SizedBox(height: AppSpacing.lg),
+              
+              Row(
+                children: [
+                  IconButton(
+                    icon: Icon(Icons.arrow_back_rounded, color: context.colors.textPrimary),
+                    onPressed: () {
+                      if (context.canPop()) {
+                        context.pop();
+                      } else {
+                        context.go('/home');
+                      }
+                    },
+                  ),
+                ],
+              ),
               
               // ─── Profile Header ───
               GlassCard(
@@ -108,21 +131,23 @@ class _ProfileTabState extends ConsumerState<ProfileTab> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text('Badges', style: theme.textTheme.titleLarge),
-                  Text('4 earned', style: theme.textTheme.labelMedium?.copyWith(color: context.colors.textSecondary)),
+                  Text('${_badges?.where((b) => b.isEarned).length ?? 0} earned', style: theme.textTheme.labelMedium?.copyWith(color: context.colors.textSecondary)),
                 ],
               ),
               SizedBox(height: AppSpacing.md),
               SizedBox(
                 height: 120,
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
-                  children: [
-                    _BadgeCard(icon: '🔥', title: 'Week Warrior', description: '7-day streak'),
-                    _BadgeCard(icon: '📚', title: 'Bookworm', description: '5 readings done'),
-                    _BadgeCard(icon: '🧠', title: 'Quiz Master', description: '10 quizzes passed'),
-                    _BadgeCard(icon: '⚡', title: 'Fast Learner', description: '3 tasks in 1 day'),
-                  ].animate(interval: 100.ms).fadeIn().slideX(begin: 0.1, end: 0, duration: 400.ms),
-                ),
+                child: _badges == null 
+                  ? const Center(child: CircularProgressIndicator()) 
+                  : ListView(
+                      scrollDirection: Axis.horizontal,
+                      children: _badges!.map((b) => _BadgeCard(
+                        icon: _mapIconNameToEmoji(b.iconUrl),
+                        title: b.name,
+                        description: b.description,
+                        isEarned: b.isEarned,
+                      )).toList().animate(interval: 100.ms).fadeIn().slideX(begin: 0.1, end: 0, duration: 400.ms),
+                    ),
               ),
               SizedBox(height: AppSpacing.xl),
 
@@ -201,14 +226,24 @@ class _ProfileTabState extends ConsumerState<ProfileTab> {
       ),
     );
   }
+  String _mapIconNameToEmoji(String? iconName) {
+    switch (iconName) {
+      case 'badge_first_steps': return '🌱';
+      case 'badge_novice': return '🥉';
+      case 'badge_fast_learner': return '⚡';
+      case 'badge_consistency': return '🔥';
+      default: return '🏆';
+    }
+  }
 }
 
 class _BadgeCard extends StatelessWidget {
   final String icon;
   final String title;
   final String description;
+  final bool isEarned;
 
-  const _BadgeCard({required this.icon, required this.title, required this.description});
+  const _BadgeCard({required this.icon, required this.title, required this.description, this.isEarned = true});
 
   @override
   Widget build(BuildContext context) {
@@ -218,19 +253,22 @@ class _BadgeCard extends StatelessWidget {
       margin: EdgeInsets.only(right: AppSpacing.md),
       padding: EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
-        color: context.colors.surface,
+        color: isEarned ? context.colors.surface : context.colors.surface.withAlpha(100),
         borderRadius: BorderRadius.all(Radius.circular(24)),
-        border: Border.all(color: context.colors.surfaceLight),
+        border: Border.all(color: isEarned ? context.colors.surfaceLight : Colors.transparent),
       ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(icon, style: TextStyle(fontSize: 28)),
-          SizedBox(height: AppSpacing.sm),
-          Text(title, style: theme.textTheme.labelMedium, textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis),
-          SizedBox(height: 2),
-          Text(description, style: theme.textTheme.labelSmall?.copyWith(color: context.colors.textSecondary, fontSize: 10), textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis),
-        ],
+      child: Opacity(
+        opacity: isEarned ? 1.0 : 0.4,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(icon, style: TextStyle(fontSize: 28)),
+            SizedBox(height: AppSpacing.sm),
+            Text(title, style: theme.textTheme.labelMedium, textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis),
+            SizedBox(height: 2),
+            Text(description, style: theme.textTheme.labelSmall?.copyWith(color: context.colors.textSecondary, fontSize: 10), textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis),
+          ],
+        ),
       ),
     );
   }

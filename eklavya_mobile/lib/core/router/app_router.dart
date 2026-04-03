@@ -14,6 +14,7 @@ import '../../features/onboarding/onboarding_screen.dart';
 import '../../features/profile/profile_tab.dart';
 import '../../features/shell/main_shell.dart';
 import '../../features/splash/splash_screen.dart';
+import '../../features/notifications/notifications_screen.dart';
 
 final GlobalKey<NavigatorState> _rootNavigatorKey =
     GlobalKey<NavigatorState>(debugLabel: 'root');
@@ -56,13 +57,21 @@ final GoRouter appRouter = GoRouter(
       ),
     ),
 
-    // ─── Standalone Profile route (outside shell) ────────
+    // ─── Standalone routes ────────
     GoRoute(
       path: '/profile',
       pageBuilder: (context, state) => slideTransition(
         context: context,
         state: state,
         child: GradientBackground(child: ProfileTab()),
+      ),
+    ),
+    GoRoute(
+      path: '/notifications',
+      pageBuilder: (context, state) => slideTransition(
+        context: context,
+        state: state,
+        child: GradientBackground(child: NotificationsScreen()),
       ),
     ),
 

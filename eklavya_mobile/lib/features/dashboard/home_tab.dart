@@ -3,8 +3,8 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lottie/lottie.dart';
 
-import '../../core/services/auth_service.dart';
 import '../../core/services/dashboard_service.dart';
+import '../../core/services/notification_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_radii.dart';
 import '../../core/theme/app_spacing.dart';
@@ -20,7 +20,9 @@ class HomeTab extends StatefulWidget {
 
 class _HomeTabState extends State<HomeTab> {
   final _dashboardService = DashboardService();
+  final _notificationService = NotificationService();
   DashboardSummary? _data;
+  int _unreadNotifications = 0;
 
   @override
   void initState() {
@@ -29,10 +31,16 @@ class _HomeTabState extends State<HomeTab> {
   }
 
   Future<void> _fetchDashboard() async {
-    final summary = await _dashboardService.getSummary();
+    final summaryFuture = _dashboardService.getSummary();
+    final notifsFuture = _notificationService.getMyNotifications();
+    
+    final results = await Future.wait([summaryFuture, notifsFuture]);
     if (!mounted) return;
+    
+    final notifs = results[1] as List<NotificationItem>;
     setState(() {
-      _data = summary;
+      _data = results[0] as DashboardSummary;
+      _unreadNotifications = notifs.where((n) => !n.readStatus).length;
     });
   }
 
@@ -153,14 +161,9 @@ class _HomeTabState extends State<HomeTab> {
                   ),
                   // Right: Notification bell + Profile avatar
                   _NotificationBell(
-                    hasUnread: false,
+                    hasUnread: _unreadNotifications > 0,
                     onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('No new notifications'),
-                          duration: Duration(seconds: 1),
-                        ),
-                      );
+                      context.push('/notifications').then((_) => _fetchDashboard());
                     },
                   ),
                   SizedBox(width: AppSpacing.sm),

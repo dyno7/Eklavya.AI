@@ -1,0 +1,14 @@
+Analyzing eklavya_mobile...                                     
+
+  error - The method 'getSessionToken' isn't defined for the type 'AuthService' - lib\core\services\notification_service.dart:37:37 - undefined_method
+  error - The getter 'apiUrl' isn't defined for the type 'AppConfig' - lib\core\services\notification_service.dart:40:32 - undefined_getter
+  error - The method 'getSessionToken' isn't defined for the type 'AuthService' - lib\core\services\notification_service.dart:60:37 - undefined_method
+  error - The getter 'apiUrl' isn't defined for the type 'AppConfig' - lib\core\services\notification_service.dart:63:32 - undefined_getter
+  error - The method 'getSessionToken' isn't defined for the type 'AuthService' - lib\core\services\user_service.dart:40:37 - undefined_method
+  error - The getter 'apiUrl' isn't defined for the type 'AppConfig' - lib\core\services\user_service.dart:43:32 - undefined_getter
+warning - Unused import: '../../core/services/auth_service.dart' - lib\features\dashboard\home_tab.dart:6:8 - unused_import
+   info - Statements in an if should be enclosed in a block - lib\features\notifications\notifications_screen.dart:77:54 - curly_braces_in_flow_control_structures
+   info - Statements in an if should be enclosed in a block - lib\features\notifications\notifications_screen.dart:78:58 - curly_braces_in_flow_control_structures
+   info - Statements in an if should be enclosed in a block - lib\features\notifications\notifications_screen.dart:79:26 - curly_braces_in_flow_control_structures
+  error - The named parameter 'margin' isn't defined - lib\features\notifications\notifications_screen.dart:82:23 - undefined_named_parameter
+

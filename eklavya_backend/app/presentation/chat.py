@@ -27,10 +27,10 @@ logger = logging.getLogger(__name__)
 _sessions: dict[str, GuruAgent] = {}
 
 
-def _get_or_create_agent(user_id: str, domain: str) -> GuruAgent:
+def _get_or_create_agent(user_id: str, domain: str, roadmap_context: str | None = None) -> GuruAgent:
     """Get existing agent session or create a new one."""
     if user_id not in _sessions:
-        _sessions[user_id] = GuruAgent(domain=domain, user_id=user_id)
+        _sessions[user_id] = GuruAgent(domain=domain, user_id=user_id, roadmap_context=roadmap_context)
     return _sessions[user_id]
 
 
@@ -47,6 +47,7 @@ class ChatSendResponse(BaseModel):
     is_roadmap_ready: bool = False
     roadmap: dict | None = None
     goal_id: str | None = None
+    navigate_to_roadmap: bool = False
 
 
 class ChatHistoryResponse(BaseModel):
@@ -61,9 +62,19 @@ async def send_message(
     db: AsyncSession = Depends(get_db),
 ):
     """Send a message to the Guru Agent and get a reply."""
-    agent = _get_or_create_agent(request.user_id, request.domain)
+    roadmap_context = None
+    try:
+        user_uuid = uuid.UUID(request.user_id)
+        goals = await repo.get_goals_for_user(db, user_uuid)
+        active_goals = [g for g in goals if g.status.value == "active"]
+        if active_goals:
+            roadmap_context = f"Active Goal Title: {active_goals[0].title}\nDescription: {active_goals[0].description}"
+    except Exception:
+        pass
 
-    reply, is_roadmap_ready = await agent.chat(request.message)
+    agent = _get_or_create_agent(request.user_id, request.domain, roadmap_context)
+
+    reply, is_roadmap_ready, navigate_to_roadmap = await agent.chat(request.message)
 
     goal_id = None
     if is_roadmap_ready and agent.roadmap:
@@ -87,6 +98,7 @@ async def send_message(
         is_roadmap_ready=is_roadmap_ready,
         roadmap=agent.roadmap if is_roadmap_ready else None,
         goal_id=goal_id,
+        navigate_to_roadmap=navigate_to_roadmap,
     )
 
 

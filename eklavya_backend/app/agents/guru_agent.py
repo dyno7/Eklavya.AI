@@ -19,12 +19,24 @@ logger = logging.getLogger(__name__)
 class GuruAgent:
     """Stateful conversational agent for a single user session."""
 
-    def __init__(self, domain: str, user_id: str):
+    def __init__(self, domain: str, user_id: str, roadmap_context: str | None = None):
         self.domain = domain
         self.user_id = user_id
         self.history: list[dict[str, str]] = []
         self.roadmap: dict | None = None
         self._system_prompt = get_system_prompt(domain)
+        
+        if roadmap_context:
+            self._system_prompt += f"\n\n## User's Current Roadmap\nThe user already has an active roadmap:\n{roadmap_context}\nDo not generate a NEW roadmap unless explicitly requested to overwrite it. Reference their current progress."
+        
+        self._system_prompt += """
+## Navigation Commands
+If the user explicitly asks to see their roadmap, asks to navigate to it, or asks to start learning, reply using EXACTLY this JSON format (no other text outside of it):
+```json
+{"navigate_to": "roadmap", "message": "Let's go to your roadmap!"}
+```
+You can customize the "message" field.
+"""
 
         # Configure Gemini
         settings = get_settings()
@@ -43,12 +55,12 @@ class GuruAgent:
             self._offline = True
             self._demo_step = 0
 
-    async def chat(self, user_message: str) -> tuple[str, bool]:
+    async def chat(self, user_message: str) -> tuple[str, bool, bool]:
         """
         Send a user message and get the Guru's reply.
 
         Returns:
-            (reply_text, is_roadmap_ready)
+            (reply_text, is_roadmap_ready, navigate_to_roadmap)
         """
         self.history.append({"role": "user", "content": user_message})
 
@@ -70,9 +82,32 @@ class GuruAgent:
                     reply,
                 )
                 self.history[-1]["content"] = clean_reply
-                return clean_reply, True
+                return clean_reply, True, False
 
-        return reply, False
+        # Parse navigate_to signals
+        navigate_to_roadmap = False
+        try:
+            # Check for direct JSON
+            parsed = json.loads(reply)
+            if parsed.get("navigate_to") == "roadmap":
+                navigate_to_roadmap = True
+                reply = parsed.get("message", "Navigating to your roadmap!")
+        except Exception:
+            # Check if buried in markdown
+            match = re.search(r"```json\s*({[\s\S]*?})\s*```", reply)
+            if match:
+                try:
+                    parsed = json.loads(match.group(1))
+                    if parsed.get("navigate_to") == "roadmap":
+                        navigate_to_roadmap = True
+                        reply = parsed.get("message", "Navigating to your roadmap!")
+                except Exception:
+                    pass
+
+        # Update history with cleaned reply if we extracted json
+        self.history[-1]["content"] = reply
+
+        return reply, False, navigate_to_roadmap
 
     async def _gemini_response(self, user_message: str) -> tuple[str, bool]:
         """Get response from Gemini API."""

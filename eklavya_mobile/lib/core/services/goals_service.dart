@@ -64,4 +64,77 @@ class GoalsService {
     }
     return [];
   }
+
+  Future<List<MilestoneItem>> fetchGoalRoadmap(String goalId) async {
+    try {
+      final mResponse = await http.get(
+        Uri.parse('$_baseUrl/api/v1/goals/$goalId/milestones'),
+        headers: _headers,
+      ).timeout(const Duration(seconds: 10));
+
+      if (mResponse.statusCode == 200) {
+        final List<dynamic> mData = jsonDecode(mResponse.body);
+        final milestones = mData.map((m) => MilestoneItem.fromJson(m)).toList();
+        
+        // Fetch tasks for each milestone in parallel
+        await Future.wait(milestones.map((m) async {
+          final tResponse = await http.get(
+            Uri.parse('$_baseUrl/api/v1/tasks/milestone/${m.id}'),
+            headers: _headers,
+          );
+          if (tResponse.statusCode == 200) {
+            final List<dynamic> tData = jsonDecode(tResponse.body);
+            m.tasks.addAll(tData.map((t) => TaskItem.fromJson(t)));
+          }
+        }));
+        
+        return milestones;
+      }
+    } catch (e) {
+      debugPrint('Roadmap API error: $e');
+    }
+    return [];
+  }
+}
+
+class TaskItem {
+  final String id;
+  final String title;
+  final String type;
+  final int xpReward;
+  final String status;
+
+  TaskItem({
+    required this.id,
+    required this.title,
+    required this.type,
+    required this.xpReward,
+    required this.status,
+  });
+
+  factory TaskItem.fromJson(Map<String, dynamic> json) => TaskItem(
+        id: json['id'] ?? '',
+        title: json['title'] ?? '',
+        type: json['task_type'] ?? 'custom',
+        xpReward: json['xp_reward'] ?? 10,
+        status: json['status'] ?? 'pending',
+      );
+}
+
+class MilestoneItem {
+  final String id;
+  final String title;
+  final List<TaskItem> tasks;
+
+  MilestoneItem({
+    required this.id,
+    required this.title,
+    this.tasks = const [],
+  });
+
+  factory MilestoneItem.fromJson(Map<String, dynamic> json) => MilestoneItem(
+        id: json['id'] ?? '',
+        title: json['title'] ?? '',
+        tasks: [], // populated later
+      );
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 
+import 'goal_roadmap_screen.dart';
 import '../../core/services/goals_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_radii.dart';
@@ -145,53 +146,62 @@ class _GoalsTabState extends State<GoalsTab> {
                       itemBuilder: (context, index) {
                         final goal = displayedGoals[index];
                         final domainColor = _getDomainColor(goal.domain);
-                        return Container(
-                          margin: EdgeInsets.only(bottom: AppSpacing.md),
-                          padding: EdgeInsets.all(AppSpacing.lg),
-                          decoration: BoxDecoration(
-                            color: context.colors.surface,
-                            borderRadius: AppRadii.lg,
-                            border: Border.all(color: context.colors.glassBorder),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Container(
-                                    padding: EdgeInsets.all(8),
-                                    decoration: BoxDecoration(
-                                      color: domainColor.withValues(alpha: 0.2),
-                                      borderRadius: AppRadii.md,
+                        return InkWell(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => GoalRoadmapScreen(goal: goal)),
+                            ).then((_) => _fetchGoals());
+                          },
+                          borderRadius: AppRadii.lg,
+                          child: Container(
+                            margin: EdgeInsets.only(bottom: AppSpacing.md),
+                            padding: EdgeInsets.all(AppSpacing.lg),
+                            decoration: BoxDecoration(
+                              color: context.colors.surface,
+                              borderRadius: AppRadii.lg,
+                              border: Border.all(color: context.colors.glassBorder),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Container(
+                                      padding: EdgeInsets.all(8),
+                                      decoration: BoxDecoration(
+                                        color: domainColor.withValues(alpha: 0.2),
+                                        borderRadius: AppRadii.md,
+                                      ),
+                                      child: Icon(_getDomainIcon(goal.domain), color: domainColor, size: 20),
                                     ),
-                                    child: Icon(_getDomainIcon(goal.domain), color: domainColor, size: 20),
-                                  ),
-                                  SizedBox(width: AppSpacing.md),
-                                  Expanded(
-                                    child: Text(goal.title, style: theme.textTheme.titleMedium),
-                                  ),
-                                ],
-                              ),
-                              SizedBox(height: AppSpacing.lg),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text('Progress', style: theme.textTheme.labelMedium?.copyWith(color: context.colors.textSecondary)),
-                                  Text('${goal.completedMilestones}/${goal.milestonesCount} milestones', 
-                                      style: theme.textTheme.labelMedium?.copyWith(color: context.colors.textPrimary)),
-                                ],
-                              ),
-                              SizedBox(height: 8),
-                              ClipRRect(
-                                borderRadius: AppRadii.pill,
-                                child: LinearProgressIndicator(
-                                  value: goal.progress / 100.0,
-                                  backgroundColor: context.colors.surfaceLight,
-                                  valueColor: AlwaysStoppedAnimation<Color>(domainColor),
-                                  minHeight: 8,
+                                    SizedBox(width: AppSpacing.md),
+                                    Expanded(
+                                      child: Text(goal.title, style: theme.textTheme.titleMedium),
+                                    ),
+                                  ],
                                 ),
-                              ),
-                            ],
+                                SizedBox(height: AppSpacing.lg),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text('Progress', style: theme.textTheme.labelMedium?.copyWith(color: context.colors.textSecondary)),
+                                    Text('${goal.completedMilestones}/${goal.milestonesCount} milestones', 
+                                        style: theme.textTheme.labelMedium?.copyWith(color: context.colors.textPrimary)),
+                                  ],
+                                ),
+                                SizedBox(height: 8),
+                                ClipRRect(
+                                  borderRadius: AppRadii.pill,
+                                  child: LinearProgressIndicator(
+                                    value: goal.progress / 100.0,
+                                    backgroundColor: context.colors.surfaceLight,
+                                    valueColor: AlwaysStoppedAnimation<Color>(domainColor),
+                                    minHeight: 8,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ).animate().fadeIn(delay: (100 * index).ms).slideY(begin: 0.1, end: 0, duration: 400.ms);
                       },

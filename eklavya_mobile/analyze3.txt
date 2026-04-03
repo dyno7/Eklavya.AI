@@ -1,19 +1,5 @@
-Analyzing lib...                                                
+Analyzing eklavya_mobile...                                     
 
-  error - Const variables must be initialized with a constant value - lib\core\data\demo_data.dart:70:23 - const_initialized_with_non_constant_value
-  error - The constructor being called isn't a const constructor - lib\core\data\demo_data.dart:70:23 - const_with_non_const
-  error - Const variables must be initialized with a constant value - lib\core\data\demo_data.dart:80:5 - const_initialized_with_non_constant_value
-  error - The constructor being called isn't a const constructor - lib\core\data\demo_data.dart:80:5 - const_with_non_const
-  error - The values in a const list literal must be constants - lib\core\data\demo_data.dart:80:5 - non_constant_list_element
-  error - The constructor being called isn't a const constructor - lib\core\data\demo_data.dart:89:5 - const_with_non_const
-  error - The values in a const list literal must be constants - lib\core\data\demo_data.dart:89:5 - non_constant_list_element
-  error - The constructor being called isn't a const constructor - lib\core\data\demo_data.dart:98:5 - const_with_non_const
-  error - The values in a const list literal must be constants - lib\core\data\demo_data.dart:98:5 - non_constant_list_element
-  error - Const variables must be initialized with a constant value - lib\core\data\demo_data.dart:155:28 - const_initialized_with_non_constant_value
-  error - The constructor being called isn't a const constructor - lib\core\data\demo_data.dart:155:28 - const_with_non_const
-  error - The constructor being called isn't a const constructor - lib\features\shell\main_shell.dart:13:5 - const_with_non_const
-  error - The constructor being called isn't a const constructor - lib\features\shell\main_shell.dart:14:5 - const_with_non_const
-  error - The constructor being called isn't a const constructor - lib\features\shell\main_shell.dart:15:5 - const_with_non_const
-  error - The constructor being called isn't a const constructor - lib\features\shell\main_shell.dart:16:5 - const_with_non_const
-  error - The constructor being called isn't a const constructor - lib\features\shell\main_shell.dart:17:5 - const_with_non_const
+  error - The getter 'edit_document_rounded' isn't defined for the type 'Icons' - lib\features\goals\goal_roadmap_screen.dart:87:34 - undefined_getter
+   info - Unnecessary braces in a string interpolation - lib\features\goals\goal_roadmap_screen.dart:147:41 - unnecessary_brace_in_string_interps
 

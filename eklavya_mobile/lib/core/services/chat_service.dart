@@ -37,8 +37,8 @@ class ChatService {
   }
 
   /// Send a message and get the Guru's reply.
-  /// Returns (replyText, isRoadmapReady, roadmapJson)
-  Future<(String, bool, Map<String, dynamic>?)> sendMessage(String message) async {
+  /// Returns (replyText, isRoadmapReady, roadmapJson, navigateToRoadmap)
+  Future<(String, bool, Map<String, dynamic>?, bool)> sendMessage(String message) async {
     try {
       final response = await http.post(
         Uri.parse('$_baseUrl/api/chat/send'),
@@ -56,6 +56,7 @@ class ChatService {
           data['reply'] as String,
           data['is_roadmap_ready'] as bool? ?? false,
           data['roadmap'] as Map<String, dynamic>?,
+          data['navigate_to_roadmap'] as bool? ?? false,
         );
       }
     } catch (_) {
@@ -79,7 +80,7 @@ class ChatService {
   }
 
   /// Offline canned responses for demo when backend isn't running.
-  (String, bool, Map<String, dynamic>?) _offlineResponse(String message) {
+  (String, bool, Map<String, dynamic>?, bool) _offlineResponse(String message) {
     _offlineStep++;
 
     switch (_offlineStep) {
@@ -91,6 +92,7 @@ class ChatService {
           "For example: computer vision, NLP, generative AI, or the fundamentals?",
           false,
           null,
+          false,
         );
       case 2:
         return (
@@ -99,6 +101,7 @@ class ChatService {
           "or do you have some programming/math background already?",
           false,
           null,
+          false,
         );
       case 3:
         return (
@@ -107,12 +110,14 @@ class ChatService {
           "Even 30 minutes of focused learning adds up quickly!",
           false,
           null,
+          false,
         );
       default:
         return (
           "🎉 Your personalized roadmap is ready! I've created a structured plan tailored just for you.",
           true,
           _demoRoadmap(),
+          false,
         );
     }
   }

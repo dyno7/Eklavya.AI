@@ -59,7 +59,7 @@ class _ChatTabState extends State<ChatTab> {
     // Simulate thinking delay for better UX
     await Future.delayed(Duration(milliseconds: 800));
 
-    final (reply, isReady, roadmap) = await _chatService.sendMessage(text);
+    final (reply, isReady, roadmap, navigateToRoadmap) = await _chatService.sendMessage(text);
 
     setState(() {
       _isTyping = false;
@@ -69,6 +69,11 @@ class _ChatTabState extends State<ChatTab> {
         _roadmap = roadmap;
       }
     });
+
+    if (navigateToRoadmap) {
+      if (mounted) context.go('/goals');
+    }
+
     _scrollToBottom();
   }
 

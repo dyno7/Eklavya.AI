@@ -50,20 +50,27 @@
 **Depends on**: Phase 5
 
 ### Phase 7: E2E Integration, Auth & Make It Work
-**Status**: ⬜ Not Started
+**Status**: ✅ Complete
 **Objective**: Make the app actually work end-to-end. Replace dummy auth (hardcoded `admin@gmail.com`) with real Supabase Auth (email+password + sign-up). Propagate the Supabase JWT from Flutter to all backend API calls. Run Alembic DB migrations so new columns exist. Verify Gemini API key is loaded and called. Fix the chat backend URL for physical devices. Full E2E flow on device: Login → Chat with Guru → AI-generated roadmap saved to DB → Home shows real goal and tasks.
 **Requirements**: REQ-02 (Auth), REQ-03 (API), REQ-07 (Guru Agent), REQ-10 (Task rendering)
 **Depends on**: Phase 6
 
+---
+
+### Phase 8: Roadmap UI, Chat Context & Profile Polishing
+**Status**: ⬜ Not Started
+**Objective**: Render actionable roadmap via goals_tab timeline UI. Provide chatbot with roadmap memory + conversation history. Update Profile tab to use real Supabase queries with unlocked badges master table + 2 skeleton loaders. Polish UI by frosting the bottom navigation bar and adding global SlideTransition pages. Create notifications feature with unread badge + Realtime subscription.
+**Depends on**: Phase 7
+
 **Tasks**:
-- [ ] TBD (run /plan 7 to create)
+- [ ] TBD (run /plan 8 to create)
 
 **Verification**:
-- Full E2E user flow on a physical device with real Supabase credentials in .env
+- TBD
 
 ---
 
-### Phase 8: Coach Agent, RL & Behavioral Chatbot
+### Phase 9: Coach Agent, RL & Behavioral Chatbot
 **Status**: ⬜ Not Started
 **Objective**: Implement RL-based drift detection. Coach Agent auto-adjusts plans using user engagement signals. Behavioral chatbot provides ongoing motivation with adaptive tone and timing. Final E2E testing.
 **Requirements**: REQ-12 (Coach Agent), REQ-13 (RL signals), REQ-14 (Behavioral chatbot), REQ-15 (E2E testing)

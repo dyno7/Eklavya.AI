@@ -25,7 +25,7 @@ final GoRouter appRouter = GoRouter(
     // ─── Pre-shell routes ──────────────────────────────
     GoRoute(
       path: '/',
-      pageBuilder: (context, state) => fadeTransition(
+      pageBuilder: (context, state) => slideTransition(
         context: context,
         state: state,
         child: SplashScreen(),
@@ -33,7 +33,7 @@ final GoRouter appRouter = GoRouter(
     ),
     GoRoute(
       path: '/login',
-      pageBuilder: (context, state) => fadeTransition(
+      pageBuilder: (context, state) => slideTransition(
         context: context,
         state: state,
         child: LoginScreen(),
@@ -41,7 +41,7 @@ final GoRouter appRouter = GoRouter(
     ),
     GoRoute(
       path: '/onboarding',
-      pageBuilder: (context, state) => fadeSlideTransition(
+      pageBuilder: (context, state) => slideTransition(
         context: context,
         state: state,
         child: OnboardingScreen(),
@@ -49,7 +49,7 @@ final GoRouter appRouter = GoRouter(
     ),
     GoRoute(
       path: '/signup',
-      pageBuilder: (context, state) => fadeSlideTransition(
+      pageBuilder: (context, state) => slideTransition(
         context: context,
         state: state,
         child: SignupScreen(),
@@ -59,7 +59,7 @@ final GoRouter appRouter = GoRouter(
     // ─── Standalone Profile route (outside shell) ────────
     GoRoute(
       path: '/profile',
-      pageBuilder: (context, state) => fadeSlideTransition(
+      pageBuilder: (context, state) => slideTransition(
         context: context,
         state: state,
         child: GradientBackground(child: ProfileTab()),

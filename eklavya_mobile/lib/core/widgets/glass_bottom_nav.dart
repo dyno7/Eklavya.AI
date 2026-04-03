@@ -56,7 +56,7 @@ class GlassBottomNav extends StatelessWidget {
               vertical: 14,
             ),
             decoration: BoxDecoration(
-              color: context.colors.navBackground.withAlpha(240),
+              color: context.colors.navBackground.withAlpha(150),
               borderRadius: BorderRadius.circular(40),
             ),
             child: Row(

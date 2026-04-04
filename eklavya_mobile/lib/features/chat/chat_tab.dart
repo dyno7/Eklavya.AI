@@ -31,9 +31,9 @@ class _ChatTabState extends State<ChatTab> {
     super.initState();
     // Add initial guru greeting
     _messages.add(ChatMessage(
-      text: "Hello! I'm your Eklavya Guru for Deep Learning 🧠\n\n"
-          "I'll help you create a personalized learning roadmap. "
-          "Tell me — what aspect of Deep Learning interests you most?",
+      text: "Hello! I'm your Eklavya Guru 🧠\n\n"
+          "I'll help you create a personalized roadmap. "
+          "Tell me — what specific skill, project, or goal do you want to master today?",
       isUser: false,
     ));
   }
@@ -47,7 +47,7 @@ class _ChatTabState extends State<ChatTab> {
 
   Future<void> _sendMessage() async {
     final text = _controller.text.trim();
-    if (text.isEmpty || _isTyping || _roadmapReady) return;
+    if (text.isEmpty || _isTyping) return;
 
     setState(() {
       _messages.add(ChatMessage(text: text, isUser: true));
@@ -69,10 +69,6 @@ class _ChatTabState extends State<ChatTab> {
         _roadmap = roadmap;
       }
     });
-
-    if (navigateToRoadmap) {
-      if (mounted) context.go('/goals');
-    }
 
     _scrollToBottom();
   }

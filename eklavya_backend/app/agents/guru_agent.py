@@ -126,17 +126,16 @@ You can customize the "message" field.
 
         if self._demo_step == 1:
             return (
-                "Welcome! I'm your Eklavya Guru for Deep Learning 🧠\n\n"
+                "Welcome! I'm your Eklavya Guru 🧠\n\n"
                 "I'd love to help you create a personalized learning roadmap. "
-                "To start — what specific aspect of Deep Learning interests you most? "
-                "For example: computer vision, NLP, generative AI, or the fundamentals?",
+                "To start — what specific skill, project, or goal do you want to master?",
                 False,
             )
         elif self._demo_step == 2:
             return (
                 "Great choice! That's a fascinating area with lots of practical applications.\n\n"
-                "How would you describe your current experience level? Are you a complete beginner, "
-                "or do you have some programming/math background already?",
+                "How would you describe your current experience level in this domain? Are you a complete beginner, "
+                "or do you have some background already?",
                 False,
             )
         elif self._demo_step == 3:
@@ -154,9 +153,9 @@ You can customize the "message" field.
             return reply, True
 
     def _generate_demo_roadmap(self) -> dict:
-        """Generate a hardcoded Deep Learning roadmap for demo mode."""
+        """Generate a hardcoded generic roadmap for demo mode."""
         return {
-            "title": "Master Deep Learning",
+            "title": "Master Your Goal",
             "domain": "learning",
             "estimated_weeks": 12,
             "milestones": [
@@ -165,18 +164,18 @@ You can customize the "message" field.
                     "order": 1,
                     "estimated_days": 14,
                     "tasks": [
-                        {"title": "Linear algebra refresher (3Blue1Brown)", "type": "watch", "xp_reward": 20, "estimated_minutes": 45},
-                        {"title": "Calculus for ML (Khan Academy)", "type": "watch", "xp_reward": 20, "estimated_minutes": 40},
-                        {"title": "NumPy & matrix operations practice", "type": "practice", "xp_reward": 30, "estimated_minutes": 60},
-                        {"title": "Quiz: Math foundations", "type": "quiz", "xp_reward": 25, "estimated_minutes": 15},
+                        {"title": "Watch overview video for basics", "type": "watch", "xp_reward": 20, "estimated_minutes": 45},
+                        {"title": "Read introductory guide", "type": "read", "xp_reward": 20, "estimated_minutes": 40},
+                        {"title": "Fundamental skills practice", "type": "practice", "xp_reward": 30, "estimated_minutes": 60},
+                        {"title": "Quiz: Core concepts", "type": "quiz", "xp_reward": 25, "estimated_minutes": 15},
                     ],
                 },
                 {
-                    "title": "Neural Network Basics",
+                    "title": "Intermediate Techniques",
                     "order": 2,
                     "estimated_days": 14,
                     "tasks": [
-                        {"title": "Watch: But what is a Neural Network? (3B1B)", "type": "watch", "xp_reward": 25, "estimated_minutes": 30},
+                        {"title": "Watch: Component architecture", "type": "watch", "xp_reward": 25, "estimated_minutes": 30},
                         {"title": "Read: Deep Learning Book Ch.6 — Deep Feedforward Networks", "type": "read", "xp_reward": 20, "estimated_minutes": 50},
                         {"title": "Code a perceptron from scratch in Python", "type": "practice", "xp_reward": 40, "estimated_minutes": 90},
                         {"title": "Implement backpropagation manually", "type": "practice", "xp_reward": 45, "estimated_minutes": 120},

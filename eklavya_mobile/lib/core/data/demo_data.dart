@@ -79,8 +79,8 @@ class DemoData {
   static const goals = [
     DemoGoal(
       id: 'g1',
-      title: 'Master Deep Learning',
-      domain: 'learning',
+      title: 'Master Full Stack Apps',
+      domain: 'startup',
       progress: 0.35,
       status: 'active',
       milestonesCount: 8,
@@ -111,7 +111,7 @@ class DemoData {
     return [
       DemoTask(
         id: 't1',
-        title: 'Watch Neural Networks lecture',
+        title: 'Watch project planning masterclass',
         type: 'watch',
         xpReward: 25,
         isCompleted: false,
@@ -119,7 +119,7 @@ class DemoData {
       ),
       DemoTask(
         id: 't2',
-        title: 'Practice backpropagation',
+        title: 'Draft architecture diagram',
         type: 'practice',
         xpReward: 30,
         isCompleted: false,
@@ -127,7 +127,7 @@ class DemoData {
       ),
       DemoTask(
         id: 't3',
-        title: 'Read Chapter 5: CNNs',
+        title: 'Read system design chapter 5',
         type: 'read',
         xpReward: 15,
         isCompleted: true,

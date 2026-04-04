@@ -133,7 +133,7 @@ class DashboardSummary {
       ),
       currentMilestone: MilestoneSummary(
         id: 'demo-ms',
-        title: 'Neural Network Basics',
+        title: 'Backend Database Setup',
         orderIndex: 2,
         status: 'active',
         totalTasks: 4,

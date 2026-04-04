@@ -120,7 +120,7 @@ class _ChatTabState extends State<ChatTab> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text('Eklavya Guru', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-                        Text('Deep Learning', style: theme.textTheme.labelSmall?.copyWith(color: context.colors.textSecondary)),
+                        Text('Goal Planner & Mentor', style: theme.textTheme.labelSmall?.copyWith(color: context.colors.textSecondary)),
                       ],
                     ),
                   ),
@@ -134,9 +134,9 @@ class _ChatTabState extends State<ChatTab> {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.school_rounded, size: 14, color: context.colors.primaryLight),
+                        Icon(Icons.track_changes_rounded, size: 14, color: context.colors.primaryLight),
                         SizedBox(width: 4),
-                        Text('Learning', style: TextStyle(fontSize: 11, color: context.colors.primaryLight, fontWeight: FontWeight.w600)),
+                        Text('Goals', style: TextStyle(fontSize: 11, color: context.colors.primaryLight, fontWeight: FontWeight.w600)),
                       ],
                     ),
                   ),
@@ -182,7 +182,16 @@ class _ChatTabState extends State<ChatTab> {
                 color: context.colors.surface.withAlpha(200),
                 border: Border(top: BorderSide(color: context.colors.glassBorder)),
               ),
-              child: _roadmapReady ? _buildSuccessBar(context, theme) : _buildInputBar(context, theme),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_roadmapReady) ...[
+                    _buildSuccessBar(context, theme),
+                    SizedBox(height: AppSpacing.md),
+                  ],
+                  _buildInputBar(context, theme),
+                ],
+              ),
             ),
           ],
         ),
@@ -242,7 +251,7 @@ class _ChatTabState extends State<ChatTab> {
         SizedBox(height: AppSpacing.md),
         GestureDetector(
           onTap: () {
-            context.go('/');
+            context.go('/goals');
           },
           child: Container(
             width: double.infinity,

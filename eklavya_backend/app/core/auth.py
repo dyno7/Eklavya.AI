@@ -43,9 +43,11 @@ async def get_current_user_id(
                 options={"verify_signature": False},
             )
         else:
+            import logging
+            logging.getLogger(__name__).error(f"JWT decode failed: {exc}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail=f"Invalid or expired token: {exc}",
+                detail=f"Invalid or expired token: {str(exc)}",
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
@@ -59,8 +61,10 @@ async def get_current_user_id(
     try:
         return uuid.UUID(user_id)
     except ValueError:
+        import logging
+        logging.getLogger(__name__).error(f"Invalid user_id format: {user_id}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid user_id format",
+            detail=f"Invalid user_id format: {user_id}",
             headers={"WWW-Authenticate": "Bearer"},
         )

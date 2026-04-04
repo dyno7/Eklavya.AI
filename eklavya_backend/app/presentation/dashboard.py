@@ -48,6 +48,7 @@ class GoalSummary(BaseModel):
     status: str
     total_milestones: int
     completed_milestones: int
+    resources: list[dict] = []
 
 
 class UserStats(BaseModel):
@@ -107,6 +108,7 @@ async def get_dashboard_summary(
         status=active_goal.status.value,
         total_milestones=len(milestones),
         completed_milestones=completed_milestones,
+        resources=active_goal.metadata_.get("resources", []) if active_goal.metadata_ else [],
     )
 
     # 4. Find the current milestone (first non-completed)

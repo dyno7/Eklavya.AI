@@ -29,10 +29,12 @@ class GoalSummary {
   final String status;
   final int totalMilestones;
   final int completedMilestones;
+  final List<dynamic> resources;
 
   GoalSummary({
     required this.id, required this.title, required this.domain,
     required this.status, required this.totalMilestones, required this.completedMilestones,
+    this.resources = const [],
   });
 
   factory GoalSummary.fromJson(Map<String, dynamic> json) => GoalSummary(
@@ -42,6 +44,7 @@ class GoalSummary {
     status: json['status'] ?? 'active',
     totalMilestones: json['total_milestones'] ?? 0,
     completedMilestones: json['completed_milestones'] ?? 0,
+    resources: json['resources'] as List<dynamic>? ?? [],
   );
 }
 
@@ -126,6 +129,7 @@ class DashboardSummary {
         status: demoGoal.status,
         totalMilestones: demoGoal.milestonesCount,
         completedMilestones: demoGoal.completedMilestones,
+        resources: [],
       ),
       currentMilestone: MilestoneSummary(
         id: 'demo-ms',

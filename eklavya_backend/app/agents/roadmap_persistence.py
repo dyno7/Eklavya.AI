@@ -43,6 +43,7 @@ async def persist_roadmap(
         metadata_={
             "source": "guru_agent",
             "estimated_weeks": roadmap.get("estimated_weeks"),
+            "resources": roadmap.get("resources", []),
         },
     )
     logger.info(f"Created goal {goal.id} for user {user_id}")

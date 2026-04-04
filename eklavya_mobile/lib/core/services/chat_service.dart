@@ -86,10 +86,9 @@ class ChatService {
     switch (_offlineStep) {
       case 1:
         return (
-          "Welcome! I'm your Eklavya Guru for Deep Learning 🧠\n\n"
-          "I'd love to help you create a personalized learning roadmap. "
-          "To start — what specific aspect of Deep Learning interests you most? "
-          "For example: computer vision, NLP, generative AI, or the fundamentals?",
+          "Welcome! I'm your Eklavya Guru 🧠\n\n"
+          "I'd love to help you create a personalized learning roadmap or goal tracker. "
+          "To start — what specific skill or goal do you want to master?",
           false,
           null,
           false,

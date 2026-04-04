@@ -512,11 +512,7 @@ class _HomeTabState extends State<HomeTab> {
                 children: [
                   Text('Suggested Resources', style: theme.textTheme.titleLarge),
                   TextButton(
-                    onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Coming soon in Phase 7!'), duration: Duration(seconds: 1)),
-                      );
-                    },
+                    onPressed: () {},
                     child: Text('See All', style: TextStyle(color: context.colors.primaryLight)),
                   ),
                 ],
@@ -526,26 +522,42 @@ class _HomeTabState extends State<HomeTab> {
                 height: 130,
                 child: ListView(
                   scrollDirection: Axis.horizontal,
-                  children: [
-                    _ResourceCard(
-                      icon: Icons.play_circle_outline_rounded,
-                      title: '3Blue1Brown: Neural Networks',
-                      subtitle: 'YouTube Video',
-                      tagColor: context.colors.primary,
-                    ),
-                    _ResourceCard(
-                      icon: Icons.menu_book_rounded,
-                      title: 'Deep Learning Book Ch.6',
-                      subtitle: 'Reading Material',
-                      tagColor: context.colors.secondary,
-                    ),
-                    _ResourceCard(
-                      icon: Icons.code_rounded,
-                      title: 'PyTorch CNN Tutorial',
-                      subtitle: 'Hands-on Exercise',
-                      tagColor: context.colors.accent,
-                    ),
-                  ],
+                  children: () {
+                    final resources = _data?.activeGoal?.resources ?? [];
+                    if (resources.isEmpty) {
+                      return [
+                        Center(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                            child: Text(
+                              'Generate a roadmap in the Chat to see AI curated resources here.',
+                              style: TextStyle(color: context.colors.textSecondary, fontSize: 13),
+                            ),
+                          ),
+                        ),
+                      ];
+                    }
+                    return resources.map((r) {
+                      final title = r['title'] ?? 'Resource';
+                      final type = r['type'] ?? 'Read';
+                      IconData dIcon = Icons.menu_book_rounded;
+                      Color dColor = context.colors.secondary;
+                      if (type.toString().toLowerCase().contains('watch')) {
+                        dIcon = Icons.play_circle_outline_rounded;
+                        dColor = context.colors.primary;
+                      } else if (type.toString().toLowerCase().contains('practice')) {
+                        dIcon = Icons.code_rounded;
+                        dColor = context.colors.accent;
+                      }
+
+                      return _ResourceCard(
+                        icon: dIcon,
+                        title: title,
+                        subtitle: type,
+                        tagColor: dColor,
+                      );
+                    }).toList();
+                  }(),
                 ),
               ).animate().fadeIn(delay: 500.ms).slideY(begin: 0.1, end: 0, duration: 400.ms),
               

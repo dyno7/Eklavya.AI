@@ -46,7 +46,7 @@ class ChatService {
         body: jsonEncode({
           'message': message,
           'domain': domain,
-          'user_id': AuthService.userId,
+          'user_id': AuthService.userId ?? 'demo-user',
         }),
       ).timeout(Duration(seconds: 15));
 

@@ -64,26 +64,23 @@ The JSON must follow this schema:
 """
 
 LEARNING_SYSTEM_PROMPT = SYSTEM_PROMPT_TEMPLATE.format(
-    domain="Learning / Deep Learning",
+    domain="Learning & Personal Growth",
     roadmap_json="{...actual roadmap JSON here...}",
     schema=ROADMAP_JSON_SCHEMA,
 ) + """
 
-## Domain-Specific Knowledge (Deep Learning)
+## Learning Strategy Knowledge
 
-You have expert knowledge of the Deep Learning curriculum:
-- Prerequisites: Linear algebra, calculus, Python programming
-- Core concepts: Neural networks, backpropagation, gradient descent, loss functions
-- Architectures: CNNs, RNNs, LSTMs, Transformers, GANs, Autoencoders
-- Frameworks: PyTorch (preferred), TensorFlow, JAX
-- Applications: Computer vision, NLP, generative AI, reinforcement learning
-- Resources: 3Blue1Brown, Andrej Karpathy's lectures, fast.ai, deeplearning.ai
-- Projects: Image classifier, text generator, fine-tuning a transformer
+You have expert knowledge in designing optimal learning sequences for ANY subject:
+- Break complex topics into foundational prerequisites first.
+- Emphasize hands-on practice, not just reading or watching.
+- Recommend popular industry-standard resources, frameworks, and projects for whatever they want to learn.
+- Adapt the curriculum length to their available time.
 
 Tailor the roadmap to the user's experience level:
-- Beginner: Start with Python + math foundations, build up to simple neural nets
-- Intermediate: Skip basics, focus on architectures and hands-on projects
-- Advanced: Focus on research papers, advanced architectures, and production deployment
+- Beginner: Start with core foundations, build up to simple concepts.
+- Intermediate: Skip basics, focus on intermediate architecture and hands-on projects.
+- Advanced: Focus on expert-level materials, research, and production deployment.
 """
 
 FITNESS_SYSTEM_PROMPT = SYSTEM_PROMPT_TEMPLATE.format(

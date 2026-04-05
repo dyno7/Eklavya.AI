@@ -9,6 +9,7 @@ Endpoints:
 
 import logging
 import uuid
+import traceback
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
@@ -91,7 +92,8 @@ async def send_message(
             logger.info(f"Roadmap persisted as goal {goal_id}")
         except (ValueError, Exception) as e:
             # user_id might not be a valid UUID in demo mode — skip persistence
-            logger.warning(f"Skipped roadmap persistence: {e}")
+            logger.error(f"Skipped roadmap persistence: {e}")
+            logger.error(traceback.format_exc())
 
     return ChatSendResponse(
         reply=reply,

@@ -26,17 +26,64 @@ class _ChatTabState extends State<ChatTab> {
   bool _isTyping = false;
   bool _roadmapReady = false;
   Map<String, dynamic>? _roadmap;
+  List<ChatSession> _sessions = [];
+  bool _sessionsLoading = false;
 
   @override
   void initState() {
     super.initState();
-    // Add initial guru greeting
+    _addGreeting();
+    _loadSessions();
+  }
+
+  void _addGreeting() {
     _messages.add(ChatMessage(
       text: "Hello! I'm your Eklavya Guru 🧠\n\n"
           "I'll help you create a personalized roadmap. "
           "Tell me — what specific skill, project, or goal do you want to master today?",
       isUser: false,
     ));
+  }
+
+  Future<void> _loadSessions() async {
+    setState(() => _sessionsLoading = true);
+    final sessions = await _chatService.getSessions();
+    if (mounted) {
+      setState(() {
+        _sessions = sessions;
+        _sessionsLoading = false;
+      });
+    }
+  }
+
+  void _startNewChat() {
+    _chatService.startNewSession();
+    setState(() {
+      _messages.clear();
+      _roadmapReady = false;
+      _roadmap = null;
+    });
+    _addGreeting();
+    Navigator.of(context).pop(); // close drawer
+  }
+
+  Future<void> _loadSession(ChatSession session) async {
+    Navigator.of(context).pop(); // close drawer
+    setState(() {
+      _messages.clear();
+      _roadmapReady = false;
+      _roadmap = null;
+      _isTyping = true;
+    });
+
+    final messages = await _chatService.loadSession(session.sessionId);
+    if (mounted) {
+      setState(() {
+        _messages.addAll(messages);
+        _isTyping = false;
+      });
+      _scrollToBottom();
+    }
   }
 
   @override
@@ -57,7 +104,6 @@ class _ChatTabState extends State<ChatTab> {
     });
     _scrollToBottom();
 
-    // Simulate thinking delay for better UX
     await Future.delayed(Duration(milliseconds: 800));
 
     final (reply, isReady, roadmap, navigateToRoadmap) = await _chatService.sendMessage(text);
@@ -76,6 +122,9 @@ class _ChatTabState extends State<ChatTab> {
     }
 
     _scrollToBottom();
+
+    // Refresh sessions list after sending (new session may have been created)
+    _loadSessions();
 
     if (navigateToRoadmap || isReady) {
       context.go('/goals');
@@ -100,6 +149,7 @@ class _ChatTabState extends State<ChatTab> {
 
     return Scaffold(
       backgroundColor: Colors.transparent,
+      drawer: _buildSessionsDrawer(context, theme),
       body: SafeArea(
         child: Column(
           children: [
@@ -108,9 +158,22 @@ class _ChatTabState extends State<ChatTab> {
               padding: EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.md),
               child: Row(
                 children: [
+                  // Hamburger menu for sessions drawer
+                  Builder(builder: (ctx) => GestureDetector(
+                    onTap: () => Scaffold.of(ctx).openDrawer(),
+                    child: Container(
+                      width: 36, height: 36,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: context.colors.surfaceLight,
+                        border: Border.all(color: context.colors.glassBorder),
+                      ),
+                      child: Icon(Icons.menu_rounded, color: context.colors.textSecondary, size: 18),
+                    ),
+                  )),
+                  SizedBox(width: AppSpacing.md),
                   Container(
-                    width: 36,
-                    height: 36,
+                    width: 36, height: 36,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       gradient: LinearGradient(
@@ -129,20 +192,31 @@ class _ChatTabState extends State<ChatTab> {
                       ],
                     ),
                   ),
-                  // Domain chip
-                  Container(
-                    padding: EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: context.colors.primary.withAlpha(30),
-                      borderRadius: AppRadii.pill,
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.track_changes_rounded, size: 14, color: context.colors.primaryLight),
-                        SizedBox(width: 4),
-                        Text('Goals', style: TextStyle(fontSize: 11, color: context.colors.primaryLight, fontWeight: FontWeight.w600)),
-                      ],
+                  // New Chat button
+                  GestureDetector(
+                    onTap: () {
+                      _chatService.startNewSession();
+                      setState(() {
+                        _messages.clear();
+                        _roadmapReady = false;
+                        _roadmap = null;
+                      });
+                      _addGreeting();
+                    },
+                    child: Container(
+                      padding: EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: context.colors.primary.withAlpha(30),
+                        borderRadius: AppRadii.pill,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.add_rounded, size: 14, color: context.colors.primaryLight),
+                          SizedBox(width: 4),
+                          Text('New', style: TextStyle(fontSize: 11, color: context.colors.primaryLight, fontWeight: FontWeight.w600)),
+                        ],
+                      ),
                     ),
                   ),
                 ],
@@ -165,7 +239,6 @@ class _ChatTabState extends State<ChatTab> {
                       return TypingIndicator();
                     },
                   ),
-                  // Confetti overlay when roadmap is ready
                   if (_roadmapReady)
                     Positioned.fill(
                       child: IgnorePointer(
@@ -204,6 +277,129 @@ class _ChatTabState extends State<ChatTab> {
     );
   }
 
+  Widget _buildSessionsDrawer(BuildContext context, ThemeData theme) {
+    return Drawer(
+      backgroundColor: context.colors.background,
+      child: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Drawer header
+            Padding(
+              padding: EdgeInsets.all(AppSpacing.lg),
+              child: Row(
+                children: [
+                  Icon(Icons.chat_bubble_outline_rounded, color: context.colors.primary, size: 22),
+                  SizedBox(width: AppSpacing.md),
+                  Text('Conversations', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+                ],
+              ),
+            ),
+
+            // New Chat button
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+              child: GestureDetector(
+                onTap: _startNewChat,
+                child: Container(
+                  width: double.infinity,
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  decoration: BoxDecoration(
+                    gradient: context.colors.primaryGradient,
+                    borderRadius: AppRadii.md,
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.add_rounded, color: Colors.white, size: 18),
+                      SizedBox(width: 6),
+                      Text('New Chat', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            SizedBox(height: AppSpacing.lg),
+
+            Divider(height: 1, color: context.colors.glassBorder),
+
+            // Sessions list
+            Expanded(
+              child: _sessionsLoading
+                  ? Center(child: CircularProgressIndicator(strokeWidth: 2, color: context.colors.primary))
+                  : _sessions.isEmpty
+                      ? Center(child: Text('No past conversations', style: theme.textTheme.bodySmall?.copyWith(color: context.colors.textTertiary)))
+                      : ListView.builder(
+                          padding: EdgeInsets.symmetric(vertical: AppSpacing.md),
+                          itemCount: _sessions.length,
+                          itemBuilder: (context, index) {
+                            final session = _sessions[index];
+                            final isActive = session.sessionId == _chatService.currentSessionId;
+                            return _buildSessionTile(context, theme, session, isActive);
+                          },
+                        ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSessionTile(BuildContext context, ThemeData theme, ChatSession session, bool isActive) {
+    String timeAgo = '';
+    if (session.lastMessageAt != null) {
+      final dt = DateTime.tryParse(session.lastMessageAt!);
+      if (dt != null) {
+        final diff = DateTime.now().difference(dt);
+        if (diff.inMinutes < 60) {
+          timeAgo = '${diff.inMinutes}m ago';
+        } else if (diff.inHours < 24) {
+          timeAgo = '${diff.inHours}h ago';
+        } else {
+          timeAgo = '${dt.month}/${dt.day}';
+        }
+      }
+    }
+
+    return GestureDetector(
+      onTap: () => _loadSession(session),
+      child: Container(
+        margin: EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 2),
+        padding: EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm + 2),
+        decoration: BoxDecoration(
+          color: isActive ? context.colors.primary.withAlpha(20) : Colors.transparent,
+          borderRadius: AppRadii.md,
+          border: isActive ? Border.all(color: context.colors.primary.withAlpha(40)) : null,
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.chat_outlined, size: 16, color: context.colors.textSecondary),
+            SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    session.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
+                      color: context.colors.textPrimary,
+                    ),
+                  ),
+                  if (timeAgo.isNotEmpty)
+                    Text(timeAgo, style: theme.textTheme.labelSmall?.copyWith(color: context.colors.textTertiary, fontSize: 10)),
+                ],
+              ),
+            ),
+            Text('${session.messageCount}', style: theme.textTheme.labelSmall?.copyWith(color: context.colors.textTertiary)),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildInputBar(BuildContext context, ThemeData theme) {
     return Row(
       children: [
@@ -232,8 +428,7 @@ class _ChatTabState extends State<ChatTab> {
         GestureDetector(
           onTap: _sendMessage,
           child: Container(
-            width: 44,
-            height: 44,
+            width: 44, height: 44,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               gradient: context.colors.primaryGradient,

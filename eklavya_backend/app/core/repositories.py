@@ -382,8 +382,14 @@ async def add_chat_memory(
     user_id: uuid.UUID,
     role: str,
     content: str,
+    session_id: uuid.UUID | None = None,
 ) -> ChatMemory:
-    memory = ChatMemory(user_id=user_id, role=role, content=content)
+    memory = ChatMemory(
+        user_id=user_id,
+        role=role,
+        content=content,
+        session_id=session_id or uuid.uuid4(),
+    )
     db.add(memory)
     await db.commit()
     await db.refresh(memory)
@@ -404,3 +410,68 @@ async def get_recent_chat_memories(
     rows = list(result.scalars().all())
     rows.reverse()
     return rows
+
+
+async def get_chat_sessions(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    limit: int = 30,
+) -> list[dict]:
+    """Return list of chat sessions with first user message as title, ordered newest first."""
+    from sqlalchemy import distinct
+
+    # Get distinct session_ids ordered by most recent message
+    stmt = (
+        select(
+            ChatMemory.session_id,
+            func.min(ChatMemory.created_at).label("started_at"),
+            func.max(ChatMemory.created_at).label("last_at"),
+            func.count(ChatMemory.id).label("message_count"),
+        )
+        .where(ChatMemory.user_id == user_id)
+        .group_by(ChatMemory.session_id)
+        .order_by(func.max(ChatMemory.created_at).desc())
+        .limit(limit)
+    )
+    result = await db.execute(stmt)
+    sessions = result.all()
+
+    session_list = []
+    for row in sessions:
+        # Get the first user message as the session title
+        first_msg_stmt = (
+            select(ChatMemory.content)
+            .where(ChatMemory.session_id == row.session_id)
+            .where(ChatMemory.role == "user")
+            .order_by(ChatMemory.created_at.asc())
+            .limit(1)
+        )
+        first_msg_result = await db.execute(first_msg_stmt)
+        first_msg = first_msg_result.scalar_one_or_none()
+
+        title = (first_msg or "New conversation")[:80]
+        session_list.append({
+            "session_id": str(row.session_id),
+            "title": title,
+            "started_at": row.started_at.isoformat() if row.started_at else None,
+            "last_message_at": row.last_at.isoformat() if row.last_at else None,
+            "message_count": row.message_count,
+        })
+
+    return session_list
+
+
+async def get_session_messages(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    session_id: uuid.UUID,
+) -> list[ChatMemory]:
+    """Return all messages for a specific session, ordered chronologically."""
+    result = await db.execute(
+        select(ChatMemory)
+        .where(ChatMemory.user_id == user_id)
+        .where(ChatMemory.session_id == session_id)
+        .order_by(ChatMemory.created_at.asc())
+    )
+    return list(result.scalars().all())
+

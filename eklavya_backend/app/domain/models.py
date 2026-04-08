@@ -311,6 +311,9 @@ class ChatMemory(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
+    session_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), index=True, server_default=text("gen_random_uuid()")
+    )
     role: Mapped[str] = mapped_column(String(20))  # user | assistant | system
     content: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(

@@ -3,7 +3,9 @@ Chat API router — handles Guru Agent conversations.
 
 Endpoints:
 - POST /api/chat/send — Send a message, get an AI reply
-- GET  /api/chat/history/{user_id} — Get conversation history
+- GET  /api/chat/sessions — List past conversation sessions
+- GET  /api/chat/sessions/{session_id} — Load messages for a session
+- GET  /api/chat/history/{user_id} — Get conversation history (legacy)
 - POST /api/chat/reset/{user_id} — Reset conversation
 """
 
@@ -25,7 +27,6 @@ router = APIRouter(prefix="/api/chat", tags=["chat"])
 logger = logging.getLogger(__name__)
 
 # ─── In-memory session store (MVP) ──────────────────
-# In production, this would be Redis or a database table.
 _sessions: dict[str, GuruAgent] = {}
 
 
@@ -51,11 +52,13 @@ def _get_or_create_agent(
 class ChatSendRequest(BaseModel):
     message: str
     domain: str = "learning"
-    user_id: str | None = None  # Deprecated: kept for backward compatibility
+    session_id: str | None = None
+    user_id: str | None = None  # Deprecated
 
 
 class ChatSendResponse(BaseModel):
     reply: str
+    session_id: str
     is_roadmap_ready: bool = False
     roadmap: dict | None = None
     goal_id: str | None = None
@@ -67,6 +70,23 @@ class ChatHistoryResponse(BaseModel):
 
 
 class ChatMemoryResponse(BaseModel):
+    messages: list[dict]
+
+
+class ChatSessionItem(BaseModel):
+    session_id: str
+    title: str
+    started_at: str | None = None
+    last_message_at: str | None = None
+    message_count: int = 0
+
+
+class ChatSessionListResponse(BaseModel):
+    sessions: list[ChatSessionItem]
+
+
+class ChatSessionMessagesResponse(BaseModel):
+    session_id: str
     messages: list[dict]
 
 
@@ -82,6 +102,12 @@ async def send_message(
     current_user_id = current_user.id
     session_user_id = str(current_user_id)
 
+    # Resolve or create session_id
+    if request.session_id:
+        session_id = uuid.UUID(request.session_id)
+    else:
+        session_id = uuid.uuid4()
+
     roadmap_context = None
     memory_context = None
     try:
@@ -90,10 +116,16 @@ async def send_message(
         if active_goals:
             roadmap_context = f"Active Goal Title: {active_goals[0].title}\nDescription: {active_goals[0].description}"
 
-        memories = await repo.get_recent_chat_memories(db, current_user_id, limit=12)
-        if memories:
-            memory_lines = [f"- {m.role}: {m.content}" for m in memories]
+        # Load this session's messages as memory context
+        session_memories = await repo.get_session_messages(db, current_user_id, session_id)
+        if session_memories:
+            memory_lines = [f"- {m.role}: {m.content}" for m in session_memories[-12:]]
             memory_context = "\n".join(memory_lines)
+        else:
+            memories = await repo.get_recent_chat_memories(db, current_user_id, limit=12)
+            if memories:
+                memory_lines = [f"- {m.role}: {m.content}" for m in memories]
+                memory_context = "\n".join(memory_lines)
     except Exception as e:
         logger.warning("Failed to load roadmap context: %s", e)
         await db.rollback()
@@ -104,13 +136,10 @@ async def send_message(
 
     goal_id = None
     if is_roadmap_ready and agent.roadmap:
-        # Persist the roadmap to the database
         try:
-            # Ensure user exists before creating a Goal to prevent FK violations
             user = await repo.get_user_profile(db, current_user_id)
             if user is None:
                 await repo.upsert_user_profile(db, current_user_id, display_name=current_user.display_name)
-            
             goal_id_uuid = await persist_roadmap(db, current_user_id, agent.roadmap)
             goal_id = str(goal_id_uuid)
             logger.info(f"Roadmap persisted as goal {goal_id}")
@@ -119,20 +148,52 @@ async def send_message(
             logger.error(traceback.format_exc())
             await db.rollback()
 
-    # Persist conversational memory for long-term continuity.
+    # Persist conversational memory with session_id
     try:
-        await repo.add_chat_memory(db, current_user_id, "user", request.message)
-        await repo.add_chat_memory(db, current_user_id, "assistant", reply)
+        await repo.add_chat_memory(db, current_user_id, "user", request.message, session_id=session_id)
+        await repo.add_chat_memory(db, current_user_id, "assistant", reply, session_id=session_id)
     except Exception as e:
         logger.warning("Failed to persist chat memory: %s", e)
         await db.rollback()
 
     return ChatSendResponse(
         reply=reply,
+        session_id=str(session_id),
         is_roadmap_ready=is_roadmap_ready,
         roadmap=agent.roadmap if is_roadmap_ready else None,
         goal_id=goal_id,
         navigate_to_roadmap=navigate_to_roadmap,
+    )
+
+
+@router.get("/sessions", response_model=ChatSessionListResponse)
+async def list_sessions(
+    db: AsyncSession = Depends(get_db),
+    current_user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """List past conversation sessions (newest first). ChatGPT-style."""
+    sessions = await repo.get_chat_sessions(db, current_user_id)
+    return ChatSessionListResponse(sessions=[ChatSessionItem(**s) for s in sessions])
+
+
+@router.get("/sessions/{session_id}", response_model=ChatSessionMessagesResponse)
+async def load_session(
+    session_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Load all messages for a specific session."""
+    messages = await repo.get_session_messages(db, current_user_id, uuid.UUID(session_id))
+    return ChatSessionMessagesResponse(
+        session_id=session_id,
+        messages=[
+            {
+                "role": m.role,
+                "content": m.content,
+                "created_at": m.created_at.isoformat() if m.created_at else None,
+            }
+            for m in messages
+        ],
     )
 
 

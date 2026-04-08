@@ -1,6 +1,6 @@
 # ROADMAP.md
 
-> **Current Phase**: 9 (planning complete) → ready for /execute 9
+> **Current Phase**: 9 (✅ Complete)
 > **Milestone**: v0.1 (MVP)
 
 ## Must-Haves (from SPEC)
@@ -73,13 +73,15 @@
 
 ---
 
-### Phase 9: Coach Agent, RL & Behavioral Chatbot
-**Status**: 📋 Planning Complete — ready for /execute 9
-**Objective**: Implement RL-based drift detection. Coach Agent auto-adjusts plans using user engagement signals. Behavioral chatbot provides ongoing motivation with adaptive tone and timing. Final E2E testing.
-**Requirements**: REQ-12 (Coach Agent), REQ-13 (RL signals), REQ-14 (Behavioral chatbot), REQ-15 (E2E testing)
+### Phase 9: Bug Fixes, UI Polish & Chat Memory
+**Status**: ✅ Complete
+**Objective**: Fix critical UX bugs (stale milestone, hardcoded XP bar/streak, fake analytics, generic task detail), create real analytics endpoint, wire persistent chat memory.
+**Requirements**: REQ-10 (Task rendering), REQ-11 (Gamification), REQ-14 (Behavioral chatbot)
 **Depends on**: Phase 8
 
-**Plans**:
-- [ ] 9.1: Milestone Progress Sync & Live UI Refresh
-- [ ] 9.2: Coach Agent — RL Drift Detection & Flutter Nudge Banner
-- [ ] 9.3: Persistent Chat Memory & Final E2E Smoke Test
+**Tasks**:
+- [x] 9.1: Milestone sync fix + analytics endpoint + display name
+- [x] 9.2: XP bar, streak dots, real analytics tab, task detail panel
+- [x] 9.3: Chat memory (already wired)
+
+**Verification**: ✅ All 8 must-haves PASS

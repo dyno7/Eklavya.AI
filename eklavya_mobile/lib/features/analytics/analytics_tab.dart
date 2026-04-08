@@ -20,6 +20,7 @@ class AnalyticsTab extends StatefulWidget {
 class _AnalyticsTabState extends State<AnalyticsTab> {
   final _dashboardService = DashboardService();
   DashboardSummary? _summary;
+  AnalyticsSummary? _analytics;
 
   @override
   void initState() {
@@ -39,10 +40,13 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
   }
 
   Future<void> _fetchStats() async {
-    final summary = await _dashboardService.getSummary();
+    final summaryFuture = _dashboardService.getSummary();
+    final analyticsFuture = _dashboardService.getAnalyticsSummary();
+    final results = await Future.wait([summaryFuture, analyticsFuture]);
     if (!mounted) return;
     setState(() {
-      _summary = summary;
+      _summary = results[0] as DashboardSummary;
+      _analytics = results[1] as AnalyticsSummary?;
     });
   }
 
@@ -68,10 +72,11 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
     final activeGoal = summary.activeGoal;
     final currentMilestone = summary.currentMilestone;
     final pendingTasks = summary.pendingTasks;
-    final weeklyXp = List<int>.generate(7, (index) => index == 6 ? userStats.totalXp : (userStats.totalXp / 7).round());
+    final weeklyXp = _analytics?.dailyXp ?? List<int>.filled(7, 0);
     final domainDistribution = <String, double>{
       if (activeGoal != null) activeGoal.domain: 1.0,
     };
+    final completionRate = _analytics?.completionRate ?? 0.0;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -210,6 +215,45 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
                   ],
                 ),
               ).animate().fadeIn(delay: 100.ms).slideY(begin: 0.1, end: 0, duration: 400.ms),
+              SizedBox(height: AppSpacing.lg),
+
+              // ─── Completion Rate Card ───
+              GlassCard(
+                padding: EdgeInsets.all(AppSpacing.lg),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Completion Rate', style: theme.textTheme.titleMedium),
+                        Text(
+                          '${(completionRate * 100).toInt()}%',
+                          style: theme.textTheme.headlineSmall?.copyWith(
+                            color: context.colors.success,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: AppSpacing.md),
+                    ClipRRect(
+                      borderRadius: AppRadii.pill,
+                      child: LinearProgressIndicator(
+                        value: completionRate,
+                        backgroundColor: context.colors.surfaceLight,
+                        valueColor: AlwaysStoppedAnimation<Color>(context.colors.success),
+                        minHeight: 10,
+                      ),
+                    ).animate().scaleX(alignment: Alignment.centerLeft, begin: 0, end: 1, duration: 600.ms, curve: Curves.easeOutCubic),
+                    SizedBox(height: AppSpacing.sm),
+                    Text(
+                      '${_analytics?.completedTasks ?? 0} of ${_analytics?.totalTasks ?? 0} tasks completed • ${_analytics?.activeDaysLast30 ?? 0} active days (30d)',
+                      style: theme.textTheme.labelSmall?.copyWith(color: context.colors.textSecondary),
+                    ),
+                  ],
+                ),
+              ).animate().fadeIn(delay: 150.ms).slideY(begin: 0.1, end: 0, duration: 400.ms),
               SizedBox(height: AppSpacing.lg),
 
               // ─── Domain Distribution Card ───

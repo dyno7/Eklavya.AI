@@ -59,7 +59,8 @@ class _GoalRoadmapScreenState extends State<GoalRoadmapScreen> {
             if (m.tasks[i].id == task.id) {
               m.tasks[i] = TaskItem(
                 id: task.id, title: task.title, type: task.type, 
-                xpReward: task.xpReward, status: 'completed'
+                xpReward: task.xpReward, status: 'completed',
+                estimatedMinutes: task.estimatedMinutes,
               );
             }
           }
@@ -194,10 +195,14 @@ class _GoalRoadmapScreenState extends State<GoalRoadmapScreen> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text('Task details', style: theme.textTheme.labelLarge),
+                                    Row(children: [
+                                      Icon(Icons.timer_outlined, size: 14, color: context.colors.textSecondary),
+                                      SizedBox(width: 4),
+                                      Text('~${task.estimatedMinutes} min', style: theme.textTheme.labelMedium?.copyWith(color: context.colors.textSecondary)),
+                                    ]),
                                     SizedBox(height: 6),
                                     Text(
-                                      'Tap the checkbox to complete this task and earn XP. Expand each task for more context.',
+                                      'Type: ${task.type[0].toUpperCase()}${task.type.substring(1)} • ${task.xpReward} XP reward',
                                       style: theme.textTheme.bodySmall?.copyWith(color: context.colors.textSecondary),
                                     ),
                                   ],

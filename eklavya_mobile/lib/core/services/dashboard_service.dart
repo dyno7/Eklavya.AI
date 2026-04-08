@@ -211,4 +211,47 @@ class DashboardService {
     }
     return null;
   }
+
+  /// Fetch real analytics data from backend.
+  Future<AnalyticsSummary?> getAnalyticsSummary() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$_baseUrl/api/v1/analytics/summary'),
+        headers: _headers,
+      ).timeout(Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        return AnalyticsSummary.fromJson(jsonDecode(response.body));
+      }
+    } catch (e) {
+      debugPrint('Analytics API error: $e');
+    }
+    return null;
+  }
+}
+
+// ─── Analytics Model ───────────────────────────────
+
+class AnalyticsSummary {
+  final List<int> dailyXp;
+  final double completionRate;
+  final int activeDaysLast30;
+  final int totalTasks;
+  final int completedTasks;
+
+  AnalyticsSummary({
+    required this.dailyXp,
+    required this.completionRate,
+    required this.activeDaysLast30,
+    required this.totalTasks,
+    required this.completedTasks,
+  });
+
+  factory AnalyticsSummary.fromJson(Map<String, dynamic> json) => AnalyticsSummary(
+    dailyXp: (json['daily_xp'] as List<dynamic>?)?.map((e) => (e as num).toInt()).toList() ?? List<int>.filled(7, 0),
+    completionRate: (json['completion_rate'] as num?)?.toDouble() ?? 0.0,
+    activeDaysLast30: json['active_days_last_30'] as int? ?? 0,
+    totalTasks: json['total_tasks'] as int? ?? 0,
+    completedTasks: json['completed_tasks'] as int? ?? 0,
+  );
 }

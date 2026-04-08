@@ -405,7 +405,7 @@ class _HomeTabState extends State<HomeTab> {
                           SizedBox(height: 4),
                           Row(
                             children: List.generate(7, (index) {
-                              final isCurrentOrPast = index < 5;
+                              final isCurrentOrPast = index < userStats.currentStreak.clamp(0, 7);
                               return Expanded(
                                 child: Container(
                                   height: 6,
@@ -479,7 +479,7 @@ class _HomeTabState extends State<HomeTab> {
                     ClipRRect(
                       borderRadius: AppRadii.pill,
                       child: LinearProgressIndicator(
-                        value: 0.7,
+                        value: (userStats.totalXp % 100) / 100.0,
                         backgroundColor: context.colors.surfaceLight,
                         valueColor: AlwaysStoppedAnimation<Color>(context.colors.accent),
                         minHeight: 8,

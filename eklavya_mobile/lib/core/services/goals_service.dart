@@ -136,6 +136,7 @@ class TaskItem {
   final String type;
   final int xpReward;
   final String status;
+  final int estimatedMinutes;
 
   TaskItem({
     required this.id,
@@ -143,15 +144,20 @@ class TaskItem {
     required this.type,
     required this.xpReward,
     required this.status,
+    this.estimatedMinutes = 30,
   });
 
-  factory TaskItem.fromJson(Map<String, dynamic> json) => TaskItem(
-        id: json['id'] ?? '',
-        title: json['title'] ?? '',
-        type: json['task_type'] ?? 'custom',
-        xpReward: json['xp_reward'] ?? 10,
-        status: json['status'] ?? 'pending',
-      );
+  factory TaskItem.fromJson(Map<String, dynamic> json) {
+    final metadata = json['metadata'] as Map<String, dynamic>? ?? {};
+    return TaskItem(
+      id: json['id'] ?? '',
+      title: json['title'] ?? '',
+      type: json['task_type'] ?? 'custom',
+      xpReward: json['xp_reward'] ?? 10,
+      status: json['status'] ?? 'pending',
+      estimatedMinutes: (metadata['estimated_minutes'] as int?) ?? (json['estimated_minutes'] as int?) ?? 30,
+    );
+  }
 }
 
 class MilestoneItem {

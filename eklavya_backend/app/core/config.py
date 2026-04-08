@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     # Supabase JWT secret — for verifying auth tokens
     JWT_SECRET: str
 
+    # Optional RS256 public key for projects using asymmetric JWT signing.
+    # Can be fetched from: https://<project-ref>.supabase.co/auth/v1/.well-known/jwks.json
+    SUPABASE_JWT_PUBLIC_KEY: str = ""
+
     # Environment (development / staging / production)
     ENVIRONMENT: str = "development"
 

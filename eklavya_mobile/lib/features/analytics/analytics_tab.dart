@@ -1,8 +1,10 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/services/dashboard_service.dart';
+import '../../core/services/roadmap_sync_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_radii.dart';
 import '../../core/theme/app_spacing.dart';
@@ -17,11 +19,22 @@ class AnalyticsTab extends StatefulWidget {
 
 class _AnalyticsTabState extends State<AnalyticsTab> {
   final _dashboardService = DashboardService();
-  UserStats? _userStats;
+  DashboardSummary? _summary;
 
   @override
   void initState() {
     super.initState();
+    RoadmapSyncService.updates.addListener(_handleRoadmapUpdated);
+    _fetchStats();
+  }
+
+  @override
+  void dispose() {
+    RoadmapSyncService.updates.removeListener(_handleRoadmapUpdated);
+    super.dispose();
+  }
+
+  void _handleRoadmapUpdated() {
     _fetchStats();
   }
 
@@ -29,7 +42,7 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
     final summary = await _dashboardService.getSummary();
     if (!mounted) return;
     setState(() {
-      _userStats = summary.user;
+      _summary = summary;
     });
   }
 
@@ -42,7 +55,7 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
 
   @override
   Widget build(BuildContext context) {
-    if (_userStats == null) {
+    if (_summary == null) {
       return Scaffold(
         backgroundColor: Colors.transparent,
         body: Center(child: CircularProgressIndicator(color: Theme.of(context).colorScheme.primary)),
@@ -50,11 +63,15 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
     }
     
     final theme = Theme.of(context);
-    final userStats = _userStats!;
-    
-    // Placeholder analytics data (will be wired to backend in Phase 7)
-    final weeklyXp = [0, 0, 0, 0, 0, 0, 0];
-    final domainDistribution = <String, double>{};
+    final summary = _summary!;
+    final userStats = summary.user;
+    final activeGoal = summary.activeGoal;
+    final currentMilestone = summary.currentMilestone;
+    final pendingTasks = summary.pendingTasks;
+    final weeklyXp = List<int>.generate(7, (index) => index == 6 ? userStats.totalXp : (userStats.totalXp / 7).round());
+    final domainDistribution = <String, double>{
+      if (activeGoal != null) activeGoal.domain: 1.0,
+    };
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -76,10 +93,19 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('This Week', style: theme.textTheme.titleMedium),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('This Week', style: theme.textTheme.titleMedium),
+                        TextButton(
+                          onPressed: () => context.go('/goals'),
+                          child: Text('Open Roadmap', style: TextStyle(color: context.colors.primaryLight)),
+                        ),
+                      ],
+                    ),
                     SizedBox(height: AppSpacing.xs),
                     Text(
-                      '0 XP',
+                      '${userStats.totalXp} XP',
                       style: theme.textTheme.headlineMedium?.copyWith(
                         color: context.colors.accent,
                         fontWeight: FontWeight.bold,
@@ -88,13 +114,7 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
                     SizedBox(height: AppSpacing.xl),
                     SizedBox(
                       height: 170,
-                      child: domainDistribution.isEmpty
-                          ? Center(
-                              child: Text('No domain data yet\nStart a roadmap!', 
-                                textAlign: TextAlign.center,
-                                style: theme.textTheme.bodyMedium?.copyWith(color: context.colors.textSecondary)),
-                            )
-                          : Stack(
+                      child: Stack(
                         children: List.generate(7, (i) {
                           final maxWeeklyXp = weeklyXp.reduce((a, b) => a > b ? a : b).toDouble();
                           final heightRatio = maxWeeklyXp > 0 ? weeklyXp[i] / maxWeeklyXp : 0.0;
@@ -104,7 +124,6 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
                           return Column(
                             mainAxisAlignment: MainAxisAlignment.end,
                             children: [
-                              // Value label above bar
                               Text(
                                 '${weeklyXp[i]}',
                                 style: theme.textTheme.labelSmall?.copyWith(
@@ -114,7 +133,6 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
                                 ),
                               ),
                               SizedBox(height: 4),
-                              // Bar with gradient
                               Container(
                                 width: 32,
                                 height: barHeight,
@@ -137,7 +155,10 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
                                 ),
                               ).animate().scaleY(
                                 alignment: Alignment.bottomCenter,
-                                begin: 0, end: 1, duration: 500.ms, delay: (100 * i).ms,
+                                begin: 0,
+                                end: 1,
+                                duration: 500.ms,
+                                delay: (100 * i).ms,
                                 curve: Curves.easeOutCubic,
                               ),
                               SizedBox(height: 8),
@@ -163,6 +184,10 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
                   children: [
                     Text('Current Streak: ${userStats.currentStreak} days 🔥', style: theme.textTheme.titleMedium),
                     SizedBox(height: AppSpacing.md),
+                    if (currentMilestone != null) ...[
+                      Text('Current milestone: ${currentMilestone.title}', style: theme.textTheme.bodyMedium?.copyWith(color: context.colors.textSecondary)),
+                      SizedBox(height: AppSpacing.sm),
+                    ],
                     Wrap(
                       spacing: 6,
                       runSpacing: 6,
@@ -195,53 +220,43 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
                   children: [
                     Text('Learning Focus', style: theme.textTheme.titleMedium),
                     SizedBox(height: AppSpacing.xl),
-                    ...domainDistribution.entries.map((e) {
-                      final domain = e.key;
-                      final percent = (e.value * 100).toInt();
-                      final color = _domainColors[domain] ?? context.colors.accent;
-                      final displayName = domain.substring(0, 1).toUpperCase() + domain.substring(1);
-                      return Padding(
-                        padding: EdgeInsets.only(bottom: AppSpacing.md),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Row(
-                                  children: [
-                                    Container(
-                                      width: 10,
-                                      height: math.max(8, 0.0),
-                                      decoration: BoxDecoration(
-                                        color: Colors.transparent,
-                                        shape: BoxShape.circle,
-                                      ),
-                                    ),
-                                    SizedBox(width: 8),
-                                    Text(displayName, style: theme.textTheme.labelLarge ?? TextStyle()),
-                                  ],
-                                ),
-                                Text('$percent%', style: theme.textTheme.labelMedium?.copyWith(
-                                  color: context.colors.textSecondary,
-                                  fontWeight: FontWeight.w600,
-                                ) ?? TextStyle()),
-                              ],
-                            ),
-                            SizedBox(height: 8),
-                            ClipRRect(
-                              borderRadius: AppRadii.pill,
-                              child: LinearProgressIndicator(
-                                value: e.value,
-                                backgroundColor: context.colors.surfaceLight,
-                                valueColor: AlwaysStoppedAnimation<Color>(color),
-                                minHeight: 8,
+                    if (domainDistribution.isEmpty)
+                      Text('No domain mix yet. Create or complete a roadmap.', style: theme.textTheme.bodyMedium?.copyWith(color: context.colors.textSecondary))
+                    else
+                      ...domainDistribution.entries.map((e) {
+                        final domain = e.key;
+                        final percent = (e.value * 100).toInt();
+                        final color = _domainColors[domain] ?? context.colors.accent;
+                        final displayName = domain.substring(0, 1).toUpperCase() + domain.substring(1);
+                        return Padding(
+                          padding: EdgeInsets.only(bottom: AppSpacing.md),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(displayName, style: theme.textTheme.labelLarge ?? TextStyle()),
+                                  Text('$percent%', style: theme.textTheme.labelMedium?.copyWith(
+                                    color: context.colors.textSecondary,
+                                    fontWeight: FontWeight.w600,
+                                  ) ?? TextStyle()),
+                                ],
                               ),
-                            ).animate().scaleX(alignment: Alignment.centerLeft, begin: 0, end: 1, duration: 600.ms, curve: Curves.easeOutCubic),
-                          ],
-                        ),
-                      );
-                    }),
+                              SizedBox(height: 8),
+                              ClipRRect(
+                                borderRadius: AppRadii.pill,
+                                child: LinearProgressIndicator(
+                                  value: e.value,
+                                  backgroundColor: context.colors.surfaceLight,
+                                  valueColor: AlwaysStoppedAnimation<Color>(color),
+                                  minHeight: 8,
+                                ),
+                              ).animate().scaleX(alignment: Alignment.centerLeft, begin: 0, end: 1, duration: 600.ms, curve: Curves.easeOutCubic),
+                            ],
+                          ),
+                        );
+                      }),
                   ],
                 ),
               ).animate().fadeIn(delay: 200.ms).slideY(begin: 0.1, end: 0, duration: 400.ms),

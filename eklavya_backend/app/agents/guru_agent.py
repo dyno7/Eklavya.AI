@@ -19,7 +19,13 @@ logger = logging.getLogger(__name__)
 class GuruAgent:
     """Stateful conversational agent for a single user session."""
 
-    def __init__(self, domain: str, user_id: str, roadmap_context: str | None = None):
+    def __init__(
+        self,
+        domain: str,
+        user_id: str,
+        roadmap_context: str | None = None,
+        memory_context: str | None = None,
+    ):
         self.domain = domain
         self.user_id = user_id
         self.history: list[dict[str, str]] = []
@@ -28,6 +34,13 @@ class GuruAgent:
         
         if roadmap_context:
             self._system_prompt += f"\n\n## User's Current Roadmap\nThe user already has an active roadmap:\n{roadmap_context}\nDo not generate a NEW roadmap unless explicitly requested to overwrite it. Reference their current progress."
+
+        if memory_context:
+            self._system_prompt += (
+                "\n\n## Recent Conversation Memory\n"
+                "Use this memory to keep continuity and help the user retrieve or modify existing roadmaps safely:\n"
+                f"{memory_context}"
+            )
         
         self._system_prompt += """
 ## Navigation Commands

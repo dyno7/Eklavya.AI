@@ -5,6 +5,7 @@ import 'package:lottie/lottie.dart';
 
 import '../../core/services/dashboard_service.dart';
 import '../../core/services/notification_service.dart';
+import '../../core/services/roadmap_sync_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_radii.dart';
 import '../../core/theme/app_spacing.dart';
@@ -27,6 +28,17 @@ class _HomeTabState extends State<HomeTab> {
   @override
   void initState() {
     super.initState();
+    RoadmapSyncService.updates.addListener(_handleRoadmapUpdated);
+    _fetchDashboard();
+  }
+
+  @override
+  void dispose() {
+    RoadmapSyncService.updates.removeListener(_handleRoadmapUpdated);
+    super.dispose();
+  }
+
+  void _handleRoadmapUpdated() {
     _fetchDashboard();
   }
 
@@ -57,6 +69,54 @@ class _HomeTabState extends State<HomeTab> {
       );
     }
     _fetchDashboard(); // Refresh
+  }
+
+  void _openGoals() {
+    context.go('/goals');
+  }
+
+  void _showResourcesSheet(List<dynamic> resources) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        if (resources.isEmpty) {
+          return SafeArea(
+            child: GlassCard(
+              padding: EdgeInsets.all(AppSpacing.lg),
+              child: Text(
+                'No resources yet. Generate a roadmap to see curated resources here.',
+                style: TextStyle(color: context.colors.textSecondary),
+              ),
+            ),
+          );
+        }
+
+        return SafeArea(
+          child: GlassCard(
+            padding: EdgeInsets.all(AppSpacing.lg),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Suggested Resources', style: Theme.of(context).textTheme.titleLarge),
+                SizedBox(height: AppSpacing.md),
+                ...resources.map((resource) {
+                  final title = resource['title'] ?? 'Resource';
+                  final type = resource['type'] ?? 'Read';
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(Icons.auto_awesome_rounded, color: context.colors.primary),
+                    title: Text(title),
+                    subtitle: Text(type.toString()),
+                  );
+                }),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   String _getGreeting() {
@@ -437,11 +497,7 @@ class _HomeTabState extends State<HomeTab> {
                 children: [
                   Text('Today\'s Tasks', style: theme.textTheme.titleLarge),
                   TextButton(
-                    onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Coming soon in Phase 7!'), duration: Duration(seconds: 1)),
-                      );
-                    },
+                    onPressed: _openGoals,
                     child: Text('See All', style: TextStyle(color: context.colors.primaryLight)),
                   ),
                 ],
@@ -512,7 +568,7 @@ class _HomeTabState extends State<HomeTab> {
                 children: [
                   Text('Suggested Resources', style: theme.textTheme.titleLarge),
                   TextButton(
-                    onPressed: () {},
+                    onPressed: () => _showResourcesSheet(_data?.activeGoal?.resources ?? []),
                     child: Text('See All', style: TextStyle(color: context.colors.primaryLight)),
                   ),
                 ],

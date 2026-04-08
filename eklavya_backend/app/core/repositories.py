@@ -12,7 +12,7 @@ from sqlalchemy import select, update, outerjoin, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.enums import TaskStatus
-from app.domain.models import Badge, Goal, Milestone, Notification, Task, User, UserBadge
+from app.domain.models import Badge, ChatMemory, Goal, Milestone, Notification, Task, User, UserBadge
 
 
 # ─── Users ─────────────────────────────────────────────────────
@@ -41,6 +41,26 @@ async def upsert_user_profile(
         user.updated_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(user)
+    return user
+
+
+async def ensure_user_display_name(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    display_name: str,
+) -> Optional[User]:
+    """Update placeholder names like 'User' or empty strings with a real display name."""
+    user = await get_user_profile(db, user_id)
+    if user is None:
+        return None
+
+    current = (user.display_name or "").strip()
+    desired = (display_name or "").strip()
+    if desired and current in {"", "User", "Learner"} and current != desired:
+        user.display_name = desired
+        user.updated_at = datetime.now(timezone.utc)
+        await db.commit()
+        await db.refresh(user)
     return user
 
 
@@ -186,6 +206,41 @@ async def get_task_by_id(db: AsyncSession, task_id: uuid.UUID) -> Optional[Task]
     return result.scalar_one_or_none()
 
 
+async def get_milestone_by_id(db: AsyncSession, milestone_id: uuid.UUID) -> Optional[Milestone]:
+    result = await db.execute(select(Milestone).where(Milestone.id == milestone_id))
+    return result.scalar_one_or_none()
+
+
+async def get_goal_by_user_and_status(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    status: str,
+) -> list[Goal]:
+    result = await db.execute(
+        select(Goal)
+        .where(Goal.user_id == user_id)
+        .where(Goal.status == status)
+        .order_by(Goal.created_at.desc())
+    )
+    return list(result.scalars().all())
+
+
+async def get_latest_task_completion_for_user(
+    db: AsyncSession, user_id: uuid.UUID
+) -> Optional[datetime]:
+    """Get latest completed_at timestamp for user's completed tasks."""
+    stmt = (
+        select(func.max(Task.completed_at))
+        .select_from(Task)
+        .join(Milestone, Task.milestone_id == Milestone.id)
+        .join(Goal, Milestone.goal_id == Goal.id)
+        .where(Goal.user_id == user_id)
+        .where(Task.completed_at.is_not(None))
+    )
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none()
+
+
 async def update_task_status(
     db: AsyncSession,
     task_id: uuid.UUID,
@@ -203,6 +258,18 @@ async def update_task_status(
     )
     await db.commit()
     return await get_task_by_id(db, task_id)
+
+
+async def update_milestone_status(
+    db: AsyncSession,
+    milestone_id: uuid.UUID,
+    status,
+) -> Optional[Milestone]:
+    await db.execute(
+        update(Milestone).where(Milestone.id == milestone_id).values(status=status)
+    )
+    await db.commit()
+    return await get_milestone_by_id(db, milestone_id)
 
 
 # ─── Badges ───────────────────────────────────────────────────
@@ -262,3 +329,78 @@ async def mark_notification_read(db: AsyncSession, notification_id: uuid.UUID, u
     result = await db.execute(stmt)
     await db.commit()
     return result.scalar_one_or_none()
+
+
+# ─── Analytics ────────────────────────────────────────────────
+
+async def get_task_completions_for_user(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    days: int = 30,
+) -> list[Task]:
+    """Return completed tasks for user in the last N days, ordered by completed_at."""
+    from datetime import timedelta
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    stmt = (
+        select(Task)
+        .join(Milestone, Task.milestone_id == Milestone.id)
+        .join(Goal, Milestone.goal_id == Goal.id)
+        .where(Goal.user_id == user_id)
+        .where(Task.status == TaskStatus.COMPLETED)
+        .where(Task.completed_at >= cutoff)
+        .order_by(Task.completed_at.asc())
+    )
+    result = await db.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def get_all_tasks_for_user(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+) -> tuple[int, int]:
+    """Return (total_tasks, completed_tasks) counts for user."""
+    stmt = (
+        select(func.count(Task.id))
+        .join(Milestone, Task.milestone_id == Milestone.id)
+        .join(Goal, Milestone.goal_id == Goal.id)
+        .where(Goal.user_id == user_id)
+    )
+    total_result = await db.execute(stmt)
+    total = total_result.scalar_one()
+
+    completed_stmt = stmt.where(Task.status == TaskStatus.COMPLETED)
+    completed_result = await db.execute(completed_stmt)
+    completed = completed_result.scalar_one()
+
+    return total, completed
+
+
+# ─── Chat Memory ────────────────────────────────────────────
+
+async def add_chat_memory(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    role: str,
+    content: str,
+) -> ChatMemory:
+    memory = ChatMemory(user_id=user_id, role=role, content=content)
+    db.add(memory)
+    await db.commit()
+    await db.refresh(memory)
+    return memory
+
+
+async def get_recent_chat_memories(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    limit: int = 20,
+) -> list[ChatMemory]:
+    result = await db.execute(
+        select(ChatMemory)
+        .where(ChatMemory.user_id == user_id)
+        .order_by(ChatMemory.created_at.desc())
+        .limit(limit)
+    )
+    rows = list(result.scalars().all())
+    rows.reverse()
+    return rows

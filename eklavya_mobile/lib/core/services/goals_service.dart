@@ -57,7 +57,40 @@ class GoalsService {
 
       if (response.statusCode == 200) {
         final List<dynamic> data = jsonDecode(response.body);
-        return data.map((g) => GoalItem.fromJson(g)).toList();
+        final goals = data
+            .map((g) => GoalItem.fromJson(g as Map<String, dynamic>))
+            .toList();
+
+        final enriched = await Future.wait(goals.map((goal) async {
+          try {
+            final mResponse = await http.get(
+              Uri.parse('$_baseUrl/api/v1/goals/${goal.id}/milestones'),
+              headers: _headers,
+            ).timeout(const Duration(seconds: 10));
+
+            if (mResponse.statusCode == 200) {
+              final List<dynamic> milestones = jsonDecode(mResponse.body);
+              final total = milestones.length;
+              final completed = milestones.where((m) => (m['status'] ?? '') == 'completed').length;
+              final progress = total == 0 ? 0.0 : (completed / total) * 100.0;
+              return GoalItem(
+                id: goal.id,
+                title: goal.title,
+                description: goal.description,
+                domain: goal.domain,
+                status: goal.status,
+                milestonesCount: total,
+                completedMilestones: completed,
+                progress: progress,
+              );
+            }
+          } catch (_) {
+            // Keep base goal if enrichment fails.
+          }
+          return goal;
+        }));
+
+        return enriched;
       }
     } catch (e) {
       debugPrint('Goals API error: $e');

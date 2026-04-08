@@ -7,13 +7,13 @@ Endpoints:
 """
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import get_current_user_id
+from app.core.auth import CurrentUser, get_current_user, get_current_user_id
 from app.core.database import get_db
 from app.core import repositories as repo
 from app.domain.enums import GoalStatus, MilestoneStatus, TaskStatus
@@ -76,13 +76,16 @@ class ClaimTaskResponse(BaseModel):
 @router.get("/summary", response_model=DashboardResponse)
 async def get_dashboard_summary(
     db: AsyncSession = Depends(get_db),
-    current_user_id: uuid.UUID = Depends(get_current_user_id),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
     """Get unified dashboard data: user stats, active goal, milestone, tasks."""
+    current_user_id = current_user.id
     # 1. Get user profile
     user = await repo.get_user_profile(db, current_user_id)
     if user is None:
-        raise HTTPException(status_code=404, detail="User profile not found")
+        user = await repo.upsert_user_profile(db, current_user_id, display_name=current_user.display_name)
+    else:
+        user = await repo.ensure_user_display_name(db, current_user_id, current_user.display_name) or user
 
     user_stats = UserStats(
         display_name=user.display_name,
@@ -159,9 +162,10 @@ async def get_dashboard_summary(
 async def claim_task(
     task_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    current_user_id: uuid.UUID = Depends(get_current_user_id),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
     """Mark a task as completed and award XP to the user."""
+    current_user_id = current_user.id
     # 1. Get task
     task = await repo.get_task_by_id(db, task_id)
     if task is None:
@@ -170,13 +174,49 @@ async def claim_task(
     if task.status == TaskStatus.COMPLETED:
         raise HTTPException(status_code=400, detail="Task already completed")
 
-    # 2. Complete the task
+    # 2. Capture previous completion point for streak math.
+    previous_completion = await repo.get_latest_task_completion_for_user(db, current_user_id)
+
+    # 3. Complete the task
     await repo.update_task_status(db, task_id, TaskStatus.COMPLETED)
 
-    # 3. Award XP
+    # 4. Expire cached ORM state so subsequent queries fetch fresh rows.
+    db.expire_all()
+
+    # 5. Advance milestone / goal state when all nested tasks are complete.
+    milestone = await repo.get_milestone_by_id(db, task.milestone_id)
+    if milestone:
+        milestone_tasks = await repo.get_tasks_for_milestone(db, milestone.id)
+        if milestone_tasks and all(t.status == TaskStatus.COMPLETED for t in milestone_tasks):
+            await repo.update_milestone_status(db, milestone.id, MilestoneStatus.COMPLETED)
+
+            milestones = await repo.get_milestones_for_goal(db, milestone.goal_id)
+            remaining = [m for m in milestones if m.status != MilestoneStatus.COMPLETED]
+            if remaining:
+                next_milestone = sorted(remaining, key=lambda item: item.order_index)[0]
+                if next_milestone.status == MilestoneStatus.LOCKED:
+                    await repo.update_milestone_status(db, next_milestone.id, MilestoneStatus.ACTIVE)
+
+            goal = await repo.get_goal_by_id(db, milestone.goal_id)
+            if goal:
+                refreshed = await repo.get_milestones_for_goal(db, goal.id)
+                if refreshed and all(m.status == MilestoneStatus.COMPLETED for m in refreshed):
+                    await repo.update_goal(db, goal.id, status=GoalStatus.COMPLETED)
+
+    # 5. Award XP and update streak.
     user = await repo.get_user_profile(db, current_user_id)
     if user:
         user.total_xp = (user.total_xp or 0) + task.xp_reward
+        today = datetime.now(timezone.utc).date()
+        prev_date = previous_completion.date() if previous_completion else None
+        if prev_date is None:
+            user.current_streak = 1
+        elif prev_date == today:
+            user.current_streak = max(user.current_streak or 0, 1)
+        elif prev_date == today - timedelta(days=1):
+            user.current_streak = (user.current_streak or 0) + 1
+        else:
+            user.current_streak = 1
         user.updated_at = datetime.now(timezone.utc)
         await db.commit()
         await db.refresh(user)

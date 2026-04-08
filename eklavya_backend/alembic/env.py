@@ -46,7 +46,11 @@ def do_run_migrations(connection):
 
 def run_migrations_online() -> None:
     """Run in 'online' mode — connect to DB and run."""
-    connectable = create_async_engine(get_url(), poolclass=pool.NullPool)
+    connectable = create_async_engine(
+        get_url(),
+        poolclass=pool.NullPool,
+        connect_args={"ssl": "require", "statement_cache_size": 0},
+    )
 
     async def run_async_migrations():
         async with connectable.connect() as connection:

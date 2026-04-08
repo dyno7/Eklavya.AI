@@ -7,7 +7,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import get_current_user_id
+from app.core.auth import CurrentUser, get_current_user, get_current_user_id
 from app.core.database import get_db
 from app.core import repositories as repo
 from app.domain.schemas import (
@@ -25,13 +25,14 @@ router = APIRouter(prefix="/api/v1/goals", tags=["Goals"])
 async def create_goal(
     body: GoalCreate,
     db: AsyncSession = Depends(get_db),
-    current_user_id: uuid.UUID = Depends(get_current_user_id),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
     """Create a new goal for the authenticated user."""
+    current_user_id = current_user.id
     # Ensure user profile exists (auto-create on first goal)
     user = await repo.get_user_profile(db, current_user_id)
     if user is None:
-        await repo.upsert_user_profile(db, current_user_id, display_name="")
+        await repo.upsert_user_profile(db, current_user_id, display_name=current_user.display_name)
 
     goal = await repo.create_goal(
         db,

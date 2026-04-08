@@ -5,7 +5,9 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/services/auth_service.dart';
 import '../../core/services/dashboard_service.dart';
+import '../../core/services/goals_service.dart';
 import '../../core/services/user_service.dart';
+import '../../core/services/roadmap_sync_service.dart';
 import '../../core/providers/theme_provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_radii.dart';
@@ -22,25 +24,48 @@ class ProfileTab extends ConsumerStatefulWidget {
 class _ProfileTabState extends ConsumerState<ProfileTab> {
   final _dashboardService = DashboardService();
   final _userService = UserService();
+  final _goalsService = GoalsService();
   UserStats? _userStats;
   List<BadgeItem>? _badges;
+  int _activeGoals = 0;
+  int _tasksDone = 0;
 
   @override
   void initState() {
     super.initState();
+    RoadmapSyncService.updates.addListener(_handleRoadmapUpdated);
+    _fetchData();
+  }
+
+  @override
+  void dispose() {
+    RoadmapSyncService.updates.removeListener(_handleRoadmapUpdated);
+    super.dispose();
+  }
+
+  void _handleRoadmapUpdated() {
     _fetchData();
   }
 
   Future<void> _fetchData() async {
     final summaryFuture = _dashboardService.getSummary();
     final badgesFuture = _userService.getMyBadges();
+    final goalsFuture = _goalsService.fetchGoals();
     
-    final results = await Future.wait([summaryFuture, badgesFuture]);
+    final results = await Future.wait([summaryFuture, badgesFuture, goalsFuture]);
     if (!mounted) return;
     
+    final summary = results[0] as DashboardSummary;
+    final badges = results[1] as List<BadgeItem>;
+    final goals = results[2] as List<GoalItem>;
+
     setState(() {
-      _userStats = (results[0] as DashboardSummary).user;
-      _badges = results[1] as List<BadgeItem>;
+      _userStats = summary.user;
+      _badges = badges;
+      _activeGoals = goals.where((g) => g.status == 'active').length;
+      _tasksDone = summary.pendingTasks.isEmpty
+          ? 0
+          : goals.fold<int>(0, (sum, goal) => sum + goal.completedMilestones);
     });
   }
 
@@ -154,11 +179,11 @@ class _ProfileTabState extends ConsumerState<ProfileTab> {
               // ─── Stats Row ───
               Row(
                 children: [
-                  Expanded(child: _StatCard(label: 'Goals Active', value: '3')),
+                  Expanded(child: _StatCard(label: 'Goals Active', value: '$_activeGoals')),
                   SizedBox(width: AppSpacing.md),
-                  Expanded(child: _StatCard(label: 'Tasks Done', value: '47')),
+                  Expanded(child: _StatCard(label: 'Milestones Done', value: '$_tasksDone')),
                   SizedBox(width: AppSpacing.md),
-                  Expanded(child: _StatCard(label: 'Days Active', value: '28')),
+                  Expanded(child: _StatCard(label: 'Days Active', value: '${userStats.currentStreak}')),
                 ],
               ).animate().fadeIn(delay: 200.ms).slideY(begin: 0.1, end: 0, duration: 400.ms),
               SizedBox(height: AppSpacing.xl),

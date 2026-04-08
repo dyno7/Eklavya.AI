@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:lottie/lottie.dart';
 
 import '../../core/services/chat_service.dart';
+import '../../core/services/roadmap_sync_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_radii.dart';
 import '../../core/theme/app_spacing.dart';
@@ -70,7 +71,15 @@ class _ChatTabState extends State<ChatTab> {
       }
     });
 
+    if (isReady) {
+      RoadmapSyncService.notifyRoadmapUpdated();
+    }
+
     _scrollToBottom();
+
+    if (navigateToRoadmap || isReady) {
+      context.go('/goals');
+    }
   }
 
   void _scrollToBottom() {

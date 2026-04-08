@@ -38,6 +38,7 @@ def get_engine() -> AsyncEngine:
             settings.DATABASE_URL,
             echo=settings.ENVIRONMENT == "development",
             pool_pre_ping=True,
+            connect_args={"ssl": "require", "statement_cache_size": 0},
         )
     return _engine
 

@@ -75,6 +75,7 @@ class _GoalRoadmapScreenState extends State<GoalRoadmapScreen> {
           duration: Duration(seconds: 2),
         ),
       );
+      await _fetchRoadmap();
     }
   }
 
@@ -128,89 +129,87 @@ class _GoalRoadmapScreenState extends State<GoalRoadmapScreen> {
                 final milestone = _milestones![index - 1];
                 final isMilestoneComplete = milestone.tasks.isNotEmpty && milestone.tasks.every((t) => t.status == 'completed');
                 
+                final completedTasks = milestone.tasks.where((t) => t.status == 'completed').length;
                 return Padding(
                   padding: const EdgeInsets.only(bottom: AppSpacing.xl),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            width: 32, height: 32,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: isMilestoneComplete ? context.colors.success : context.colors.primary.withAlpha(40),
-                            ),
-                            child: Center(
-                              child: isMilestoneComplete 
-                                ? Icon(Icons.check_rounded, color: Colors.white, size: 20)
-                                : Text('$index', style: TextStyle(color: context.colors.primary, fontWeight: FontWeight.bold)),
-                            ),
-                          ),
-                          SizedBox(width: AppSpacing.md),
-                          Expanded(child: Text(milestone.title, style: theme.textTheme.titleLarge)),
-                        ],
-                      ),
-                      SizedBox(height: AppSpacing.md),
-                      Padding(
-                        padding: const EdgeInsets.only(left: 15.0),
-                        child: Container(
-                          decoration: BoxDecoration(
-                            border: Border(left: BorderSide(color: context.colors.glassBorder, width: 2)),
-                          ),
-                          padding: const EdgeInsets.only(left: AppSpacing.lg),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: milestone.tasks.map((task) {
-                              final isCompleted = task.status == 'completed';
-                              final isCompleting = _completingTasks.contains(task.id);
-                              
-                              return Padding(
-                                padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                                child: InkWell(
-                                  onTap: () => _completeTask(task),
-                                  borderRadius: AppRadii.lg,
-                                  child: GlassCard(
-                                    padding: EdgeInsets.all(AppSpacing.md),
-                                    child: Row(
-                                      children: [
-                                        Icon(
-                                          isCompleted ? Icons.check_circle_rounded : _getTaskIcon(task.type),
-                                          color: isCompleted ? context.colors.success : context.colors.primary,
-                                        ),
-                                        SizedBox(width: AppSpacing.md),
-                                        Expanded(
-                                          child: Text(
-                                            task.title,
-                                            style: theme.textTheme.bodyLarge?.copyWith(
-                                              decoration: isCompleted ? TextDecoration.lineThrough : null,
-                                              color: isCompleted ? context.colors.textSecondary : context.colors.textPrimary,
-                                            ),
-                                          ),
-                                        ),
-                                        if (isCompleting)
-                                          SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                                        else if (!isCompleted)
-                                          Container(
-                                            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                            decoration: BoxDecoration(
-                                              color: context.colors.accent.withAlpha(30),
-                                              borderRadius: AppRadii.pill,
-                                            ),
-                                            child: Text('+${task.xpReward} XP', style: TextStyle(color: context.colors.accent, fontSize: 12, fontWeight: FontWeight.bold)),
-                                          ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ).animate().fadeIn().scaleXY(begin: 0.95);
-                            }).toList(),
-                          ),
+                  child: GlassCard(
+                    padding: EdgeInsets.zero,
+                    child: ExpansionTile(
+                      initiallyExpanded: true,
+                      tilePadding: EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.md),
+                      childrenPadding: EdgeInsets.only(left: AppSpacing.lg, right: AppSpacing.lg, bottom: AppSpacing.lg),
+                      leading: Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: isMilestoneComplete ? context.colors.success : context.colors.primary.withAlpha(40),
+                        ),
+                        child: Center(
+                          child: isMilestoneComplete
+                              ? Icon(Icons.check_rounded, color: Colors.white, size: 20)
+                              : Text('$index', style: TextStyle(color: context.colors.primary, fontWeight: FontWeight.bold)),
                         ),
                       ),
-                    ],
-                  ).animate(delay: (index * 100).ms).fadeIn().slideX(begin: 0.1, end: 0, duration: 400.ms),
-                );
+                      title: Text(milestone.title, style: theme.textTheme.titleLarge),
+                      subtitle: Text('$completedTasks/${milestone.tasks.length} tasks complete', style: theme.textTheme.bodySmall?.copyWith(color: context.colors.textSecondary)),
+                      children: milestone.tasks.map((task) {
+                        final isCompleted = task.status == 'completed';
+                        final isCompleting = _completingTasks.contains(task.id);
+
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                          child: ExpansionTile(
+                            tilePadding: EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 4),
+                            childrenPadding: EdgeInsets.only(left: AppSpacing.md, right: AppSpacing.md, bottom: AppSpacing.md),
+                            leading: Checkbox(
+                              value: isCompleted,
+                              activeColor: context.colors.success,
+                              onChanged: isCompleted || isCompleting ? null : (value) {
+                                if (value == true) _completeTask(task);
+                              },
+                            ),
+                            title: Text(
+                              task.title,
+                              style: theme.textTheme.bodyLarge?.copyWith(
+                                decoration: isCompleted ? TextDecoration.lineThrough : null,
+                                color: isCompleted ? context.colors.textSecondary : context.colors.textPrimary,
+                              ),
+                            ),
+                            subtitle: Text(
+                              '+${task.xpReward} XP',
+                              style: theme.textTheme.labelMedium?.copyWith(color: context.colors.accent),
+                            ),
+                            trailing: isCompleting
+                                ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                                : Icon(isCompleted ? Icons.expand_more_rounded : Icons.info_outline_rounded),
+                            children: [
+                              Container(
+                                width: double.infinity,
+                                padding: EdgeInsets.all(AppSpacing.md),
+                                decoration: BoxDecoration(
+                                  color: context.colors.surfaceLight.withAlpha(80),
+                                  borderRadius: AppRadii.md,
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('Task details', style: theme.textTheme.labelLarge),
+                                    SizedBox(height: 6),
+                                    Text(
+                                      'Tap the checkbox to complete this task and earn XP. Expand each task for more context.',
+                                      style: theme.textTheme.bodySmall?.copyWith(color: context.colors.textSecondary),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ).animate().fadeIn().slideY(begin: 0.05, end: 0, duration: 250.ms);
+                      }).toList(),
+                    ),
+                  ),
+                ).animate(delay: (index * 100).ms).fadeIn().slideX(begin: 0.1, end: 0, duration: 400.ms);
               },
             ),
     );

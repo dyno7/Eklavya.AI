@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import 'goal_roadmap_screen.dart';
 import '../../core/services/goals_service.dart';
+import '../../core/services/roadmap_sync_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_radii.dart';
 import '../../core/theme/app_spacing.dart';
@@ -24,6 +25,17 @@ class _GoalsTabState extends State<GoalsTab> {
   @override
   void initState() {
     super.initState();
+    RoadmapSyncService.updates.addListener(_handleRoadmapUpdated);
+    _fetchGoals();
+  }
+
+  @override
+  void dispose() {
+    RoadmapSyncService.updates.removeListener(_handleRoadmapUpdated);
+    super.dispose();
+  }
+
+  void _handleRoadmapUpdated() {
     _fetchGoals();
   }
 

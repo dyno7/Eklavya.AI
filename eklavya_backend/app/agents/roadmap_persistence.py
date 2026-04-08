@@ -12,8 +12,9 @@ from app.core import repositories as repo
 
 logger = logging.getLogger(__name__)
 
-# Valid task types that map to our TaskType enum
-_VALID_TASK_TYPES = {"read", "watch", "practice", "quiz", "write", "exercise", "custom"}
+# Valid task types that map to our TaskType enum in DB.
+# Unsupported generated types are downgraded to "custom".
+_VALID_TASK_TYPES = {"read", "watch", "practice", "quiz", "custom"}
 
 
 async def persist_roadmap(
@@ -33,7 +34,7 @@ async def persist_roadmap(
         The created goal's UUID
     """
     # 1. Create the Goal
-    domain = roadmap.get("domain", "learning")
+    domain = str(roadmap.get("domain", "learning")).strip().lower()
     goal = await repo.create_goal(
         db,
         user_id=user_id,
@@ -61,7 +62,7 @@ async def persist_roadmap(
 
         tasks = ms_data.get("tasks", [])
         for idx, task_data in enumerate(tasks):
-            task_type = task_data.get("type", "custom")
+            task_type = str(task_data.get("type", "custom")).strip().lower()
             if task_type not in _VALID_TASK_TYPES:
                 task_type = "custom"
 

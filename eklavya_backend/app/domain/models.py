@@ -31,6 +31,10 @@ from app.domain.enums import (
 )
 
 
+def _enum_values(enum_cls):
+    return lambda enum: [item.value for item in enum]
+
+
 class User(Base):
     """Application user profile linked to Supabase Auth."""
 
@@ -66,6 +70,9 @@ class User(Base):
     notifications: Mapped[list["Notification"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+    chat_memories: Mapped[list["ChatMemory"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:
         return f"<User {self.id} '{self.display_name}'>"
@@ -83,7 +90,12 @@ class Goal(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
     domain: Mapped[Domain] = mapped_column(
-        SAEnum(Domain, name="domain_type", create_type=False)
+        SAEnum(
+            Domain,
+            name="domain_type",
+            create_type=False,
+            values_callable=_enum_values(Domain),
+        )
     )
     title: Mapped[str] = mapped_column(String(500))
     description: Mapped[str] = mapped_column(Text, default="", server_default=text("''"))
@@ -92,7 +104,12 @@ class Goal(Base):
         "metadata", JSON, default=dict, server_default=text("'{}'::jsonb")
     )
     status: Mapped[GoalStatus] = mapped_column(
-        SAEnum(GoalStatus, name="goal_status", create_type=False),
+        SAEnum(
+            GoalStatus,
+            name="goal_status",
+            create_type=False,
+            values_callable=_enum_values(GoalStatus),
+        ),
         default=GoalStatus.ACTIVE,
         server_default=text("'active'"),
     )
@@ -128,7 +145,12 @@ class Milestone(Base):
     description: Mapped[str] = mapped_column(Text, default="", server_default=text("''"))
     order_index: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
     status: Mapped[MilestoneStatus] = mapped_column(
-        SAEnum(MilestoneStatus, name="milestone_status", create_type=False),
+        SAEnum(
+            MilestoneStatus,
+            name="milestone_status",
+            create_type=False,
+            values_callable=_enum_values(MilestoneStatus),
+        ),
         default=MilestoneStatus.LOCKED,
         server_default=text("'locked'"),
     )
@@ -160,7 +182,12 @@ class Task(Base):
     title: Mapped[str] = mapped_column(String(500))
     description: Mapped[str] = mapped_column(Text, default="", server_default=text("''"))
     task_type: Mapped[TaskType] = mapped_column(
-        SAEnum(TaskType, name="task_type", create_type=False),
+        SAEnum(
+            TaskType,
+            name="task_type",
+            create_type=False,
+            values_callable=_enum_values(TaskType),
+        ),
         default=TaskType.CUSTOM,
         server_default=text("'custom'"),
     )
@@ -172,7 +199,12 @@ class Task(Base):
     )
     order_index: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
     status: Mapped[TaskStatus] = mapped_column(
-        SAEnum(TaskStatus, name="task_status", create_type=False),
+        SAEnum(
+            TaskStatus,
+            name="task_status",
+            create_type=False,
+            values_callable=_enum_values(TaskStatus),
+        ),
         default=TaskStatus.PENDING,
         server_default=text("'pending'"),
     )
@@ -266,4 +298,27 @@ class Notification(Base):
 
     def __repr__(self) -> str:
         return f"<Notification {self.id} User:{self.user_id} [Read:{self.read_status}]>"
+
+
+class ChatMemory(Base):
+    """Persisted conversational memory for user-specific AI context."""
+
+    __tablename__ = "chat_memories"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    role: Mapped[str] = mapped_column(String(20))  # user | assistant | system
+    content: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()")
+    )
+
+    user: Mapped["User"] = relationship(back_populates="chat_memories")
+
+    def __repr__(self) -> str:
+        return f"<ChatMemory {self.id} User:{self.user_id} Role:{self.role}>"
 

@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import '../config/app_config.dart';
 import '../data/demo_data.dart';
 import '../services/auth_service.dart';
+import '../services/roadmap_sync_service.dart';
 
 // ─── Models ────────────────────────────────────────
 
@@ -202,6 +203,7 @@ class DashboardService {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
+        RoadmapSyncService.notifyRoadmapUpdated();
         return (data['xp_earned'] as int, data['new_total_xp'] as int);
       }
     } catch (_) {

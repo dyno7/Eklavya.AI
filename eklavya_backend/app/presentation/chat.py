@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.guru_agent import GuruAgent
 from app.agents.roadmap_persistence import persist_roadmap
+from app.core.auth import CurrentUser, get_current_user, get_current_user_id
 from app.core.database import get_db
 from app.core import repositories as repo
 
@@ -28,10 +29,20 @@ logger = logging.getLogger(__name__)
 _sessions: dict[str, GuruAgent] = {}
 
 
-def _get_or_create_agent(user_id: str, domain: str, roadmap_context: str | None = None) -> GuruAgent:
+def _get_or_create_agent(
+    user_id: str,
+    domain: str,
+    roadmap_context: str | None = None,
+    memory_context: str | None = None,
+) -> GuruAgent:
     """Get existing agent session or create a new one."""
     if user_id not in _sessions:
-        _sessions[user_id] = GuruAgent(domain=domain, user_id=user_id, roadmap_context=roadmap_context)
+        _sessions[user_id] = GuruAgent(
+            domain=domain,
+            user_id=user_id,
+            roadmap_context=roadmap_context,
+            memory_context=memory_context,
+        )
     return _sessions[user_id]
 
 
@@ -40,7 +51,7 @@ def _get_or_create_agent(user_id: str, domain: str, roadmap_context: str | None 
 class ChatSendRequest(BaseModel):
     message: str
     domain: str = "learning"
-    user_id: str = "demo-user"  # Will come from auth in production
+    user_id: str | None = None  # Deprecated: kept for backward compatibility
 
 
 class ChatSendResponse(BaseModel):
@@ -55,25 +66,39 @@ class ChatHistoryResponse(BaseModel):
     messages: list[dict]
 
 
+class ChatMemoryResponse(BaseModel):
+    messages: list[dict]
+
+
 # ─── Endpoints ──────────────────────────────────────
 
 @router.post("/send", response_model=ChatSendResponse)
 async def send_message(
     request: ChatSendRequest,
     db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
     """Send a message to the Guru Agent and get a reply."""
+    current_user_id = current_user.id
+    session_user_id = str(current_user_id)
+
     roadmap_context = None
+    memory_context = None
     try:
-        user_uuid = uuid.UUID(request.user_id)
-        goals = await repo.get_goals_for_user(db, user_uuid)
+        goals = await repo.get_goals_for_user(db, current_user_id)
         active_goals = [g for g in goals if g.status.value == "active"]
         if active_goals:
             roadmap_context = f"Active Goal Title: {active_goals[0].title}\nDescription: {active_goals[0].description}"
-    except Exception:
-        pass
 
-    agent = _get_or_create_agent(request.user_id, request.domain, roadmap_context)
+        memories = await repo.get_recent_chat_memories(db, current_user_id, limit=12)
+        if memories:
+            memory_lines = [f"- {m.role}: {m.content}" for m in memories]
+            memory_context = "\n".join(memory_lines)
+    except Exception as e:
+        logger.warning("Failed to load roadmap context: %s", e)
+        await db.rollback()
+
+    agent = _get_or_create_agent(session_user_id, request.domain, roadmap_context, memory_context)
 
     reply, is_roadmap_ready, navigate_to_roadmap = await agent.chat(request.message)
 
@@ -81,19 +106,26 @@ async def send_message(
     if is_roadmap_ready and agent.roadmap:
         # Persist the roadmap to the database
         try:
-            user_uuid = uuid.UUID(request.user_id)
             # Ensure user exists before creating a Goal to prevent FK violations
-            user = await repo.get_user_profile(db, user_uuid)
+            user = await repo.get_user_profile(db, current_user_id)
             if user is None:
-                await repo.upsert_user_profile(db, user_uuid, display_name="User")
+                await repo.upsert_user_profile(db, current_user_id, display_name=current_user.display_name)
             
-            goal_id_uuid = await persist_roadmap(db, user_uuid, agent.roadmap)
+            goal_id_uuid = await persist_roadmap(db, current_user_id, agent.roadmap)
             goal_id = str(goal_id_uuid)
             logger.info(f"Roadmap persisted as goal {goal_id}")
-        except (ValueError, Exception) as e:
-            # user_id might not be a valid UUID in demo mode — skip persistence
+        except Exception as e:
             logger.error(f"Skipped roadmap persistence: {e}")
             logger.error(traceback.format_exc())
+            await db.rollback()
+
+    # Persist conversational memory for long-term continuity.
+    try:
+        await repo.add_chat_memory(db, current_user_id, "user", request.message)
+        await repo.add_chat_memory(db, current_user_id, "assistant", reply)
+    except Exception as e:
+        logger.warning("Failed to persist chat memory: %s", e)
+        await db.rollback()
 
     return ChatSendResponse(
         reply=reply,
@@ -110,6 +142,24 @@ async def get_history(user_id: str):
     if user_id not in _sessions:
         return ChatHistoryResponse(messages=[])
     return ChatHistoryResponse(messages=_sessions[user_id].get_history())
+
+
+@router.get("/memory", response_model=ChatMemoryResponse)
+async def get_memory(
+    db: AsyncSession = Depends(get_db),
+    current_user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    memories = await repo.get_recent_chat_memories(db, current_user_id, limit=50)
+    return ChatMemoryResponse(
+        messages=[
+            {
+                "role": m.role,
+                "content": m.content,
+                "created_at": m.created_at.isoformat() if m.created_at else None,
+            }
+            for m in memories
+        ]
+    )
 
 
 @router.post("/reset/{user_id}")

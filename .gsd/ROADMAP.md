@@ -1,6 +1,6 @@
 # ROADMAP.md
 
-> **Current Phase**: 6 (complete) → Phase 7 next
+> **Current Phase**: 9 (planning complete) → ready for /execute 9
 > **Milestone**: v0.1 (MVP)
 
 ## Must-Haves (from SPEC)
@@ -58,20 +58,28 @@
 ---
 
 ### Phase 8: Roadmap UI, Chat Context & Profile Polishing
-**Status**: ⬜ Not Started
+**Status**: ✅ Complete
 **Objective**: Render actionable roadmap via goals_tab timeline UI. Provide chatbot with roadmap memory + conversation history. Update Profile tab to use real Supabase queries with unlocked badges master table + 2 skeleton loaders. Polish UI by frosting the bottom navigation bar and adding global SlideTransition pages. Create notifications feature with unread badge + Realtime subscription.
 **Depends on**: Phase 7
 
 **Tasks**:
-- [ ] TBD (run /plan 8 to create)
+- [x] 8.1: GoalRoadmapScreen interactive timeline
+- [x] 8.2: Chat roadmap context injection
+- [x] 8.3: Profile real badge data
+- [x] 8.4: Frosted bottom nav + slide transitions
+- [x] 8.5: Notifications framework
 
-**Verification**:
-- TBD
+**Verification**: ✅ Executed and verified.
 
 ---
 
 ### Phase 9: Coach Agent, RL & Behavioral Chatbot
-**Status**: ⬜ Not Started
+**Status**: 📋 Planning Complete — ready for /execute 9
 **Objective**: Implement RL-based drift detection. Coach Agent auto-adjusts plans using user engagement signals. Behavioral chatbot provides ongoing motivation with adaptive tone and timing. Final E2E testing.
 **Requirements**: REQ-12 (Coach Agent), REQ-13 (RL signals), REQ-14 (Behavioral chatbot), REQ-15 (E2E testing)
-**Depends on**: Phase 7
+**Depends on**: Phase 8
+
+**Plans**:
+- [ ] 9.1: Milestone Progress Sync & Live UI Refresh
+- [ ] 9.2: Coach Agent — RL Drift Detection & Flutter Nudge Banner
+- [ ] 9.3: Persistent Chat Memory & Final E2E Smoke Test

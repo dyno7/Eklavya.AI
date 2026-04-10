@@ -1,10 +1,10 @@
 # STATE.md — Project Memory
 
-> Last updated: 2026-04-08
+> Last updated: 2026-04-11
 ## Current Position
-- **Phase**: 9 (completed)
-- **Task**: All tasks complete
-- **Status**: ✅ Verified
+- **Phase**: 10 (not started)
+- **Task**: Not started
+- **Status**: ⬜ Ready to plan
 
 ## What's Done
 - Flutter app scaffolded (`eklavya_mobile`) with Riverpod + GoRouter
@@ -25,8 +25,14 @@
 - **Phase 9 executed**: Milestone sync fix (db.expire_all), real analytics endpoint, XP bar/streak fixes, task detail panel, completion rate card, chat memory already wired.
 
 ## What's Next
-1. Proceed to Phase 10 (Coach Agent + RL Drift Detection)
-2. Consider: profile badges real-time update, "See All" navigation audit
+1. **Phase 10**: Coach Agent + RL-Based Drift Detection (backend scoring model, APScheduler, `/coach/status` API, Flutter nudge UI)
+2. **Phase 11**: Behavioral Chatbot upgrade (tone classifier, MI techniques, drift context injection, proactive check-ins)
+3. Also pending from Must-Haves: Improved gamification (XP system depth, badge animations, leaderboard)
+4. Minor: profile badges real-time update, "See All" navigation audit
+
+## Phases Added (2026-04-11)
+- Phase 10 added: Coach Agent with RL-Based Drift Detection
+- Phase 11 added: Behavioral Chatbot for Ongoing Motivation
 
 ## Active Decisions
 - Flutter chosen over React Native (ADR-001)

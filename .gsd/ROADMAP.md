@@ -1,6 +1,6 @@
 # ROADMAP.md
 
-> **Current Phase**: 9 (✅ Complete)
+> **Current Phase**: 10 (⬜ Not Started)
 > **Milestone**: v0.1 (MVP)
 
 ## Must-Haves (from SPEC)
@@ -85,3 +85,47 @@
 - [x] 9.3: Chat memory (already wired)
 
 **Verification**: ✅ All 8 must-haves PASS
+
+---
+
+### Phase 10: Coach Agent with RL-Based Drift Detection
+**Status**: ⬜ Not Started
+**Objective**: Build a backend Coach Agent that monitors user behavioral signals (task completion rate, streak breaks, XP velocity) over time to detect when a user is drifting off-track. Implement a simple reinforcement-learning-inspired scoring model (no full RL framework needed — rule-based reward shaping + trend analysis is sufficient) that triggers personalized re-engagement nudges and roadmap difficulty adjustments. Expose a `/coach/status` endpoint and wire nudge notifications into the Flutter app.
+**Requirements**: REQ-12 (Coach Agent), REQ-13 (RL Drift Detection)
+**Depends on**: Phase 9
+
+**Tasks**:
+- [ ] 10.1: Behavioral signal collector — aggregate daily XP, streak, and completion-rate metrics per user into a `user_behavior_log` table
+- [ ] 10.2: Drift-detection model — sliding-window trend scorer (3-day / 7-day) with configurable thresholds; classifies user state as ON_TRACK / DRIFTING / DISENGAGED
+- [ ] 10.3: Reward-shaping engine — define reward signals (task done on time = +1, missed = -0.5, streak break = -1) stored as RL-style episodic logs
+- [ ] 10.4: Coach decision layer — given drift state + reward history, select intervention: none / soft-nudge / roadmap-adjust / hard-alert
+- [ ] 10.5: `/coach/status` API endpoint — returns current drift state + recommended intervention for the authenticated user
+- [ ] 10.6: Flutter Coach nudge UI — banner / notification card on Home tab when drift detected; "Get back on track" CTA
+- [ ] 10.7: Scheduled background job (APScheduler) — runs drift detection daily for all active users
+
+**Verification**:
+- Drift state correctly classifies a simulated 7-day drop in completions as DRIFTING
+- API returns nudge payload; Flutter displays banner
+- Background job logs run timestamps
+
+---
+
+### Phase 11: Behavioral Chatbot for Ongoing Motivation
+**Status**: ⬜ Not Started
+**Objective**: Evolve the existing Guru chatbot into a full behavioral-psychology-informed motivational coach. The chatbot should detect emotional tone in user messages (frustration, plateau, excitement), adapt its response style accordingly, use Motivational Interviewing (MI) techniques, and proactively send scheduled check-in messages. Integrate Coach Agent drift state from Phase 10 so the chatbot has real-time context about the user's behavioral trajectory.
+**Requirements**: REQ-14 (Behavioral Chatbot)
+**Depends on**: Phase 10
+
+**Tasks**:
+- [ ] 11.1: Tone & sentiment classifier — lightweight prompt-based classifier (via Gemini) to label user message as: FRUSTRATED / PLATEAUED / MOTIVATED / NEUTRAL
+- [ ] 11.2: Adaptive system prompt engine — dynamically prepend tone-appropriate persona instructions to the Gemini system prompt (e.g., empathetic + MI-style for FRUSTRATED)
+- [ ] 11.3: Motivational Interviewing pattern library — curated set of MI techniques (open questions, affirmations, reflections, summaries) injected as few-shot examples based on tone
+- [ ] 11.4: Coach Agent context injection — pull drift state from Phase 10's `/coach/status` and inject into chatbot context so Gemini knows user is ON_TRACK / DRIFTING
+- [ ] 11.5: Proactive check-in scheduler — APScheduler job sends "How is it going?" style nudge messages to the chat via Supabase Realtime when user hasn't interacted in 48h
+- [ ] 11.6: Flutter chat enhancements — typing indicator, emotion-tagged message bubbles (subtle colour tint based on detected tone), animated send button
+- [ ] 11.7: Behavioral response metrics — log tone labels + intervention type per session for future analysis
+
+**Verification**:
+- Frustrated message receives empathetic MI-style response (not generic)
+- Drifting user sees drift-aware chatbot context in reply
+- Proactive check-in fires after simulated 48h inactivity

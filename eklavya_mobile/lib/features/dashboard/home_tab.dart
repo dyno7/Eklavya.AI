@@ -643,47 +643,11 @@ class _HomeTabState extends State<HomeTab> {
               ...data.pendingTasks.asMap().entries.map((entry) {
                 final idx = entry.key;
                 final task = entry.value;
-                final isCompleted = task.status == 'completed';
                 return Padding(
                   padding: EdgeInsets.only(bottom: AppSpacing.md),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: context.colors.surface,
-                      borderRadius: AppRadii.lg,
-                      border: Border.all(color: context.colors.surfaceLight),
-                    ),
-                    child: ListTile(
-                      contentPadding: EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: 8),
-                      leading: Icon(
-                        _getTaskIcon(task.taskType),
-                        color: isCompleted ? context.colors.success : context.colors.secondary,
-                        size: 28,
-                      ),
-                      title: Text(
-                        task.title,
-                        style: theme.textTheme.bodyLarge?.copyWith(
-                          decoration: isCompleted ? TextDecoration.lineThrough : null,
-                          color: isCompleted ? context.colors.textTertiary : context.colors.textPrimary,
-                        ),
-                      ),
-                      subtitle: Padding(
-                        padding: EdgeInsets.only(top: 4.0),
-                        child: Text(
-                          '+${task.xpReward} XP',
-                          style: theme.textTheme.labelMedium?.copyWith(color: context.colors.accent),
-                        ),
-                      ),
-                      trailing: Checkbox(
-                        value: isCompleted,
-                        activeColor: context.colors.success,
-                        checkColor: context.colors.background,
-                        side: BorderSide(color: context.colors.textSecondary, width: 2),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                        onChanged: isCompleted ? null : (val) {
-                          if (val == true) _onTaskComplete(task);
-                        },
-                      ),
-                    ),
+                  child: _TaskCard(
+                    task: task,
+                    onComplete: () => _onTaskComplete(task),
                   ).animate().fadeIn(delay: (300 + idx * 100).ms).slideX(begin: 0.05, end: 0, duration: 400.ms),
                 );
               }),
@@ -857,6 +821,166 @@ class _ResourceCard extends StatelessWidget {
             style: theme.textTheme.labelSmall?.copyWith(color: context.colors.textSecondary),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ─── Task Card ───
+class _TaskCard extends StatefulWidget {
+  final TaskSummary task;
+  final VoidCallback onComplete;
+  
+  const _TaskCard({required this.task, required this.onComplete});
+
+  @override
+  State<_TaskCard> createState() => _TaskCardState();
+}
+
+class _TaskCardState extends State<_TaskCard> {
+  bool _isChecking = false;
+
+  IconData _getIcon(String type) {
+    switch (type) {
+      case 'watch': return Icons.play_circle_fill_rounded;
+      case 'practice': return Icons.code_rounded;
+      case 'read': return Icons.menu_book_rounded;
+      case 'quiz': return Icons.quiz_rounded;
+      default: return Icons.star_rounded;
+    }
+  }
+  
+  Color _getColor(String type, BuildContext context) {
+    switch (type) {
+      case 'watch': return context.colors.primary;
+      case 'practice': return context.colors.accent;
+      case 'read': return context.colors.secondary;
+      case 'quiz': return context.colors.warning;
+      default: return context.colors.accent;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isCompleted = widget.task.status == 'completed';
+    final taskColor = isCompleted ? context.colors.success : _getColor(widget.task.taskType, context);
+    final diffColor = widget.task.estimatedMinutes < 20 
+        ? context.colors.success 
+        : widget.task.estimatedMinutes < 45 ? context.colors.warning : context.colors.error;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: context.colors.surface,
+        borderRadius: AppRadii.lg,
+        border: Border.all(color: context.colors.surfaceLight),
+      ),
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: 12),
+        child: Row(
+          children: [
+            // Left Icon Circle
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: taskColor.withAlpha(50),
+              ),
+              child: Center(
+                child: Icon(_getIcon(widget.task.taskType), color: taskColor, size: 22),
+              ),
+            ),
+            SizedBox(width: AppSpacing.md),
+            
+            // Middle Details
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    widget.task.title,
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      decoration: isCompleted ? TextDecoration.lineThrough : null,
+                      color: isCompleted ? context.colors.textTertiary : context.colors.textPrimary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  SizedBox(height: 6),
+                  Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 8,
+                    children: [
+                      if (widget.task.estimatedMinutes > 0)
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.timer_outlined, size: 14, color: context.colors.textSecondary),
+                            SizedBox(width: 4),
+                            Text(
+                              '${widget.task.estimatedMinutes}m',
+                              style: theme.textTheme.labelSmall?.copyWith(color: context.colors.textSecondary),
+                            ),
+                          ],
+                        ),
+                      Container(
+                        padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: context.colors.accent.withAlpha(50),
+                          borderRadius: AppRadii.pill,
+                        ),
+                        child: Text(
+                          '+${widget.task.xpReward} XP',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: context.colors.accent,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 10,
+                          ),
+                        ),
+                      ),
+                      if (widget.task.estimatedMinutes > 0)
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: diffColor,
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            
+            // Right Checkbox
+            GestureDetector(
+              onTap: () async {
+                if (isCompleted || _isChecking) return;
+                setState(() => _isChecking = true);
+                widget.onComplete();
+              },
+              child: AnimatedScale(
+                scale: _isChecking ? 1.3 : 1.0,
+                duration: Duration(milliseconds: 150),
+                curve: Curves.fastOutSlowIn,
+                child: Checkbox(
+                  value: isCompleted,
+                  activeColor: context.colors.success,
+                  checkColor: context.colors.background,
+                  side: BorderSide(color: context.colors.textSecondary, width: 2),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                  onChanged: isCompleted ? null : (val) {
+                    if (val == true && !_isChecking) {
+                      setState(() => _isChecking = true);
+                      widget.onComplete();
+                    }
+                  },
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

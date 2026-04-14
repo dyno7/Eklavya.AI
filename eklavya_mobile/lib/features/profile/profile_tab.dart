@@ -273,21 +273,26 @@ class _BadgeCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Container(
+    Widget content = Container(
       width: 110,
       margin: EdgeInsets.only(right: AppSpacing.md),
       padding: EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
         color: isEarned ? context.colors.surface : context.colors.surface.withAlpha(100),
         borderRadius: BorderRadius.all(Radius.circular(24)),
-        border: Border.all(color: isEarned ? context.colors.surfaceLight : Colors.transparent),
+        border: Border.all(
+          color: isEarned 
+              ? Color(0xFFFACC15).withAlpha(120) 
+              : Colors.transparent,
+          width: isEarned ? 1.5 : 1.0,
+        ),
       ),
       child: Opacity(
-        opacity: isEarned ? 1.0 : 0.4,
+        opacity: isEarned ? 1.0 : 0.35,
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(icon, style: TextStyle(fontSize: 28)),
+            Text(icon, style: TextStyle(fontSize: isEarned ? 32 : 28)),
             SizedBox(height: AppSpacing.sm),
             Text(title, style: theme.textTheme.labelMedium, textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis),
             SizedBox(height: 2),
@@ -296,6 +301,11 @@ class _BadgeCard extends StatelessWidget {
         ),
       ),
     );
+
+    if (isEarned) {
+      return content.animate(onPlay: (c) => c.repeat()).shimmer(duration: 2400.ms, color: Colors.white.withAlpha(40));
+    }
+    return content;
   }
 }
 

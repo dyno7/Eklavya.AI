@@ -11,6 +11,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     Enum as SAEnum,
+    Float,
     ForeignKey,
     Integer,
     String,
@@ -326,4 +327,64 @@ class ChatMemory(Base):
 
     def __repr__(self) -> str:
         return f"<ChatMemory {self.id} User:{self.user_id} Role:{self.role}>"
+
+
+class UserSessionLog(Base):
+    """Tracks app open sessions to measure V(t) in the GDI equation."""
+    __tablename__ = "user_session_logs"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    login_timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()"), index=True
+    )
+    tasks_completed_in_session: Mapped[int] = mapped_column(
+        Integer, default=0, server_default=text("0")
+    )
+
+
+class UserBehaviorLog(Base):
+    """Daily aggregated telemetry for the Kalman Filter / GDI State Estimator."""
+    __tablename__ = "user_behavior_logs"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    date: Mapped[date] = mapped_column(Date, index=True)
+    momentum_score: Mapped[float] = mapped_column(
+        Float, default=0.0, server_default=text("0.0")
+    )
+    avoidance_count: Mapped[int] = mapped_column(
+        Integer, default=0, server_default=text("0")
+    )
+    decay_value: Mapped[float] = mapped_column(
+        Float, default=0.0, server_default=text("0.0")
+    )
+    gdi_score: Mapped[float] = mapped_column(
+        Float, default=0.0, server_default=text("0.0")
+    )
+
+
+class RewardSignalLog(Base):
+    """Episodic vectors for RL actions and trajectory adjustments."""
+    __tablename__ = "reward_signal_logs"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()"), index=True
+    )
+    action_type: Mapped[str] = mapped_column(String(100))
+    reward_value: Mapped[float] = mapped_column(Float, default=0.0, server_default=text("0.0"))
 

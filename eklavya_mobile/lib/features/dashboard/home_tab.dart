@@ -60,15 +60,143 @@ class _HomeTabState extends State<HomeTab> {
     final result = await _dashboardService.completeTask(task.id);
     if (!mounted) return;
     if (result != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('+${result.$1} XP earned! ⭐'),
-          backgroundColor: context.colors.success,
-          duration: Duration(seconds: 2),
-        ),
-      );
+      _showXpToast(context, result.xpEarned, result.bonusXp);
+      
+      if (result.levelUp) {
+        _showLevelUpModal(context, result.newLevel);
+      }
+      
+      if (result.badgesAwarded.isNotEmpty) {
+        Future.delayed(Duration(milliseconds: 600), () {
+          if (!mounted) return;
+          for (final badge in result.badgesAwarded) {
+             ScaffoldMessenger.of(context).showSnackBar(
+               SnackBar(
+                 content: Text('🏅 Badge Unlocked: $badge!'),
+                 backgroundColor: context.colors.accent,
+                 duration: Duration(seconds: 2),
+               ),
+             );
+          }
+        });
+      }
     }
     _fetchDashboard(); // Refresh
+  }
+
+  void _showXpToast(BuildContext ctx, int xp, int bonusXp) {
+    if (!mounted) return;
+    
+    final overlayContent = Material(
+      color: Colors.transparent,
+      child: Center(
+        child: Container(
+          padding: EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.md),
+          decoration: BoxDecoration(
+            gradient: context.colors.primaryGradient,
+            borderRadius: AppRadii.pill,
+            boxShadow: [
+              BoxShadow(
+                color: context.colors.primary.withAlpha(60),
+                blurRadius: 16,
+                offset: Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.star_rounded, color: Colors.white, size: 24),
+              SizedBox(width: AppSpacing.sm),
+              Text(
+                '+$xp XP',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
+              ),
+              if (bonusXp > 0) ...[
+                SizedBox(width: AppSpacing.sm),
+                Text(
+                  '(+$bonusXp bonus!)',
+                  style: TextStyle(color: Colors.white.withAlpha(200), fontWeight: FontWeight.w600, fontSize: 14),
+                ),
+              ],
+            ],
+          ),
+        ).animate().slideY(begin: 0, end: -0.3, duration: 1200.ms, curve: Curves.easeOutCubic).fadeOut(delay: 800.ms, duration: 400.ms),
+      ),
+    );
+
+    final overlayEntry = OverlayEntry(
+      builder: (context) => Positioned(
+        top: MediaQuery.of(context).size.height * 0.15,
+        left: 0,
+        right: 0,
+        child: overlayContent,
+      ),
+    );
+
+    Overlay.of(ctx).insert(overlayEntry);
+    Future.delayed(Duration(milliseconds: 1500), () {
+      if (overlayEntry.mounted) overlayEntry.remove();
+    });
+  }
+
+  void _showLevelUpModal(BuildContext ctx, int newLevel) {
+    showModalBottomSheet(
+      context: ctx,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: GlassCard(
+            padding: EdgeInsets.all(AppSpacing.xxl),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                SizedBox(height: AppSpacing.md),
+                Icon(Icons.bolt_rounded, size: 80, color: context.colors.accent)
+                  .animate(onPlay: (c) => c.repeat())
+                  .scale(begin: Offset(0.9, 0.9), end: Offset(1.1, 1.1), duration: 800.ms, curve: Curves.easeInOutReversable)
+                  .then()
+                  .scale(begin: Offset(1.1, 1.1), end: Offset(0.9, 0.9), duration: 800.ms, curve: Curves.easeInOutReversable),
+                SizedBox(height: AppSpacing.lg),
+                Text(
+                  '⚡ Level $newLevel Unlocked!',
+                  style: Theme.of(ctx).textTheme.headlineMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: context.colors.textPrimary,
+                  ),
+                  textAlign: TextAlign.center,
+                ).animate().fadeIn().slideY(begin: 0.2, end: 0, duration: 500.ms),
+                SizedBox(height: AppSpacing.md),
+                Text(
+                  'Keep it up — you\'re on fire 🔥',
+                  style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                    color: context.colors.textSecondary,
+                  ),
+                  textAlign: TextAlign.center,
+                ).animate().fadeIn(delay: 200.ms).slideY(begin: 0.2, end: 0, duration: 500.ms),
+                SizedBox(height: AppSpacing.xxl),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.of(sheetContext).pop(),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: context.colors.primary,
+                      foregroundColor: Colors.white,
+                      padding: EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(borderRadius: AppRadii.lg),
+                    ),
+                    child: Text('Let\'s Go', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                  ),
+                ).animate().fadeIn(delay: 400.ms).slideY(begin: 0.2, end: 0, duration: 500.ms),
+                SizedBox(height: AppSpacing.md),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   void _openGoals() {

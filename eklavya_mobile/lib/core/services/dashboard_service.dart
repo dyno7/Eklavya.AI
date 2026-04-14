@@ -9,6 +9,16 @@ import '../services/roadmap_sync_service.dart';
 
 // ─── Models ────────────────────────────────────────
 
+class TaskClaimResult {
+  final int xpEarned;
+  final int bonusXp;
+  final int newTotalXp;
+  final bool levelUp;
+  final int newLevel;
+  final List<String> badgesAwarded;
+  const TaskClaimResult({required this.xpEarned, required this.bonusXp, required this.newTotalXp, required this.levelUp, required this.newLevel, required this.badgesAwarded});
+}
+
 class UserStats {
   final String displayName;
   final int totalXp;
@@ -193,8 +203,8 @@ class DashboardService {
   }
 
   /// Complete a task and earn XP.
-  /// Returns (xpEarned, newTotalXp) or null on failure.
-  Future<(int, int)?> completeTask(String taskId) async {
+  /// Returns TaskClaimResult or null on failure.
+  Future<TaskClaimResult?> completeTask(String taskId) async {
     try {
       final response = await http.post(
         Uri.parse('$_baseUrl/api/v1/dashboard/claim-task/$taskId'),
@@ -204,7 +214,14 @@ class DashboardService {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         RoadmapSyncService.notifyRoadmapUpdated();
-        return (data['xp_earned'] as int, data['new_total_xp'] as int);
+        return TaskClaimResult(
+          xpEarned: data['xp_earned'] as int? ?? 0,
+          bonusXp: data['bonus_xp'] as int? ?? 0,
+          newTotalXp: data['new_total_xp'] as int? ?? 0,
+          levelUp: data['level_up'] as bool? ?? false,
+          newLevel: data['new_level'] as int? ?? 0,
+          badgesAwarded: (data['badges_awarded'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
+        );
       }
     } catch (_) {
       // Offline — silently fail

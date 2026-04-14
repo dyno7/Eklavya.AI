@@ -69,6 +69,10 @@ class ClaimTaskResponse(BaseModel):
     xp_earned: int
     new_total_xp: int
     message: str
+    bonus_xp: int = 0
+    level_up: bool = False
+    new_level: int = 0
+    badges_awarded: list[str] = []
 
 
 # ─── Endpoints ──────────────────────────────────────
@@ -93,15 +97,14 @@ async def get_dashboard_summary(
         current_streak=user.current_streak,
     )
 
-    # 2. Get the most recent ACTIVE goal
-    goals = await repo.get_goals_for_user(db, current_user_id)
-    active_goal = next((g for g in goals if g.status == GoalStatus.ACTIVE), None)
+    # 2. Get the most recent ACTIVE goal with eager loaded relations
+    active_goal = await repo.get_dashboard_active_goal(db, current_user_id)
 
     if active_goal is None:
         return DashboardResponse(user=user_stats)
 
-    # 3. Get milestones for that goal
-    milestones = await repo.get_milestones_for_goal(db, active_goal.id)
+    # 3. Process eagerly loaded milestones
+    milestones = active_goal.milestones
 
     completed_milestones = sum(1 for m in milestones if m.status == MilestoneStatus.COMPLETED)
     goal_summary = GoalSummary(
@@ -114,9 +117,9 @@ async def get_dashboard_summary(
         resources=active_goal.metadata_.get("resources", []) if active_goal.metadata_ else [],
     )
 
-    # 4. Find the current milestone (first non-completed)
+    # 4. Find the current milestone (first non-completed by order)
     current_ms = next(
-        (m for m in milestones if m.status in (MilestoneStatus.LOCKED, MilestoneStatus.ACTIVE)),
+        (m for m in sorted(milestones, key=lambda x: x.order_index) if m.status in (MilestoneStatus.LOCKED, MilestoneStatus.ACTIVE)),
         None,
     )
 
@@ -124,7 +127,7 @@ async def get_dashboard_summary(
         return DashboardResponse(user=user_stats, active_goal=goal_summary)
 
     # 5. Get tasks for the current milestone
-    tasks = await repo.get_tasks_for_milestone(db, current_ms.id)
+    tasks = current_ms.tasks
     completed_tasks = sum(1 for t in tasks if t.status == TaskStatus.COMPLETED)
 
     milestone_summary = MilestoneSummary(
@@ -185,10 +188,14 @@ async def claim_task(
 
     # 5. Advance milestone / goal state when all nested tasks are complete.
     milestone = await repo.get_milestone_by_id(db, task.milestone_id)
+    bonus_xp_from_milestone = 0
+    bonus_xp_from_goal = 0
+
     if milestone:
         milestone_tasks = await repo.get_tasks_for_milestone(db, milestone.id)
         if milestone_tasks and all(t.status == TaskStatus.COMPLETED for t in milestone_tasks):
             await repo.update_milestone_status(db, milestone.id, MilestoneStatus.COMPLETED)
+            bonus_xp_from_milestone = 50
 
             milestones = await repo.get_milestones_for_goal(db, milestone.goal_id)
             remaining = [m for m in milestones if m.status != MilestoneStatus.COMPLETED]
@@ -202,11 +209,33 @@ async def claim_task(
                 refreshed = await repo.get_milestones_for_goal(db, goal.id)
                 if refreshed and all(m.status == MilestoneStatus.COMPLETED for m in refreshed):
                     await repo.update_goal(db, goal.id, status=GoalStatus.COMPLETED)
+                    bonus_xp_from_goal = 200
 
-    # 5. Award XP and update streak.
+    # 6. Award XP, update streak, check level and badges.
     user = await repo.get_user_profile(db, current_user_id)
+    bonus_xp_total = 0
+    level_up = False
+    new_level = 0
+    badges_awarded = []
+
     if user:
-        user.total_xp = (user.total_xp or 0) + task.xp_reward
+        old_xp = user.total_xp or 0
+        old_level = old_xp // 100
+
+        streak = user.current_streak or 0
+        multiplier = 1.0
+        if streak >= 7:
+            multiplier = 1.5
+        elif streak >= 3:
+            multiplier = 1.2
+            
+        streak_bonus = int(task.xp_reward * (multiplier - 1.0))
+        bonus_xp_total = streak_bonus + bonus_xp_from_milestone + bonus_xp_from_goal
+        
+        user.total_xp = old_xp + task.xp_reward + bonus_xp_total
+        new_level = user.total_xp // 100
+        level_up = new_level > old_level
+
         today = datetime.now(timezone.utc).date()
         prev_date = previous_completion.date() if previous_completion else None
         if prev_date is None:
@@ -221,9 +250,38 @@ async def claim_task(
         await db.commit()
         await db.refresh(user)
 
+        # 7. Evaluate badge triggers
+        if previous_completion is None:
+            awarded = await repo.award_badge_if_not_earned(db, current_user_id, "First Steps")
+            if awarded: badges_awarded.append(awarded)
+            
+        if user.total_xp >= 100:
+            awarded = await repo.award_badge_if_not_earned(db, current_user_id, "Novice")
+            if awarded: badges_awarded.append(awarded)
+            
+        if user.total_xp >= 500:
+            awarded = await repo.award_badge_if_not_earned(db, current_user_id, "Centurion")
+            if awarded: badges_awarded.append(awarded)
+            
+        if user.current_streak >= 7:
+            awarded = await repo.award_badge_if_not_earned(db, current_user_id, "Consistency")
+            if awarded: badges_awarded.append(awarded)
+            
+        if bonus_xp_from_milestone > 0:
+            awarded = await repo.award_badge_if_not_earned(db, current_user_id, "Milestone Master")
+            if awarded: badges_awarded.append(awarded)
+            
+        if bonus_xp_from_goal > 0:
+            awarded = await repo.award_badge_if_not_earned(db, current_user_id, "Goal Crusher")
+            if awarded: badges_awarded.append(awarded)
+
     return ClaimTaskResponse(
         task_id=str(task_id),
         xp_earned=task.xp_reward,
         new_total_xp=user.total_xp if user else 0,
-        message=f"+{task.xp_reward} XP earned!",
+        message=f"+{task.xp_reward + bonus_xp_total} XP earned!" if bonus_xp_total else f"+{task.xp_reward} XP earned!",
+        bonus_xp=bonus_xp_total,
+        level_up=level_up,
+        new_level=new_level,
+        badges_awarded=badges_awarded,
     )

@@ -100,6 +100,25 @@ async def get_goals_for_user(db: AsyncSession, user_id: uuid.UUID) -> list[Goal]
     return list(result.scalars().all())
 
 
+async def get_dashboard_active_goal(db: AsyncSession, user_id: uuid.UUID) -> Optional[Goal]:
+    """Get the active goal for a user, eagerly loading its milestones and nested tasks."""
+    from sqlalchemy.orm import selectinload
+    from app.domain.enums import GoalStatus
+    
+    stmt = (
+        select(Goal)
+        .options(
+            selectinload(Goal.milestones).selectinload(Milestone.tasks)
+        )
+        .where(Goal.user_id == user_id)
+        .where(Goal.status == GoalStatus.ACTIVE)
+        .order_by(Goal.created_at.desc())
+        .limit(1)
+    )
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none()
+
+
 async def get_goal_by_id(db: AsyncSession, goal_id: uuid.UUID) -> Optional[Goal]:
     """Get a single goal by ID."""
     result = await db.execute(select(Goal).where(Goal.id == goal_id))
@@ -304,6 +323,27 @@ async def get_user_badges_status(db: AsyncSession, user_id: uuid.UUID) -> list[d
             "earned_at": earned_at
         })
     return response_list
+
+
+async def award_badge_if_not_earned(db: AsyncSession, user_id: uuid.UUID, badge_name: str) -> Optional[str]:
+    """Award badge by name if user hasn't earned it yet. Returns badge name if newly awarded, else None."""
+    from sqlalchemy import select
+    from app.domain.models import Badge, UserBadge
+    
+    badge = (await db.execute(select(Badge).where(Badge.name == badge_name))).scalar_one_or_none()
+    if badge is None: 
+        return None
+        
+    existing = (await db.execute(
+        select(UserBadge).where(UserBadge.user_id == user_id, UserBadge.badge_id == badge.id)
+    )).scalar_one_or_none()
+    
+    if existing: 
+        return None
+        
+    db.add(UserBadge(user_id=user_id, badge_id=badge.id))
+    await db.commit()
+    return badge_name
 
 
 # ─── Notifications ────────────────────────────────────────────

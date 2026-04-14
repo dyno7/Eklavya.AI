@@ -112,6 +112,7 @@ class Goal(Base):
         ),
         default=GoalStatus.ACTIVE,
         server_default=text("'active'"),
+        index=True,
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=text("now()")
@@ -207,10 +208,11 @@ class Task(Base):
         ),
         default=TaskStatus.PENDING,
         server_default=text("'pending'"),
+        index=True,
     )
     due_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     completed_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
+        DateTime(timezone=True), nullable=True, index=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=text("now()")

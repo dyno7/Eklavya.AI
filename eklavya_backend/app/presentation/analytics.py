@@ -71,3 +71,16 @@ async def get_analytics_summary(
         total_tasks=total_tasks,
         completed_tasks=completed_tasks,
     )
+
+@router.post("/session_start")
+async def log_session_start(
+    db: AsyncSession = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    """Telemetry endpoint for Flutter app foregrounding."""
+    from app.domain.models import UserSessionLog
+    
+    log = UserSessionLog(user_id=current_user.id, login_timestamp=datetime.now(timezone.utc))
+    db.add(log)
+    await db.commit()
+    return {"status": "ok"}

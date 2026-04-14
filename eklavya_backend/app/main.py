@@ -10,6 +10,7 @@ from app.presentation.chat import router as chat_router
 from app.presentation.dashboard import router as dashboard_router
 from app.presentation.notifications import router as notifications_router
 from app.presentation.analytics import router as analytics_router
+from app.presentation.coach import router as coach_router
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from app.core.gdi_service import GdiService
@@ -64,7 +65,7 @@ app.include_router(chat_router)
 app.include_router(dashboard_router)
 app.include_router(notifications_router)
 app.include_router(analytics_router)
-
+app.include_router(coach_router)
 
 @app.get("/health")
 def health_check():

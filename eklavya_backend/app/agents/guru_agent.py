@@ -4,11 +4,13 @@ Guru Agent — the conversational AI that creates personalized roadmaps.
 Uses Google Gemini for generation. Maintains per-session conversation history.
 """
 
+import asyncio
 import json
 import logging
 import re
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 from app.agents.prompts import get_system_prompt
 from app.core.config import get_settings
@@ -30,7 +32,18 @@ class GuruAgent:
         self.user_id = user_id
         self.history: list[dict[str, str]] = []
         self.roadmap: dict | None = None
-        self._system_prompt = get_system_prompt(domain)
+        
+        # Base capability scalar (Adaptive Goal Decomposition)
+        # Defaults to 1.0; can be injected during initialization by an endpoint controller.
+        self.user_capability_scalar = 1.0
+        
+        adaptive_difficulty_context = (
+            f"\n\n## Adaptive Goal Decomposition\n"
+            f"The user's current capability scalar is {self.user_capability_scalar}. "
+            "Multiply the estimated base difficulty/time and xp_reward of generated tasks by this scalar."
+        )
+
+        self._system_prompt = get_system_prompt(domain) + adaptive_difficulty_context
         
         if roadmap_context:
             self._system_prompt += f"\n\n## User's Current Roadmap\nThe user already has an active roadmap:\n{roadmap_context}\nDo not generate a NEW roadmap unless explicitly requested to overwrite it. Reference their current progress."
@@ -51,15 +64,17 @@ If the user explicitly asks to see their roadmap, asks to navigate to it, or ask
 You can customize the "message" field.
 """
 
-        # Configure Gemini
+        # Configure Gemini GenAI SDK
         settings = get_settings()
         if settings.GEMINI_API_KEY:
-            genai.configure(api_key=settings.GEMINI_API_KEY)
-            self._model = genai.GenerativeModel(
-                model_name="gemini-2.5-flash",
-                system_instruction=self._system_prompt,
+            self._client = genai.Client(api_key=settings.GEMINI_API_KEY)
+            self._chat = self._client.chats.create(
+                model="gemini-2.5-flash",
+                config=types.GenerateContentConfig(
+                    system_instruction=self._system_prompt,
+                    temperature=0.7,
+                )
             )
-            self._chat = self._model.start_chat(history=[])
             self._offline = False
         else:
             logger.warning("GEMINI_API_KEY not set — running in offline demo mode")
@@ -125,7 +140,7 @@ You can customize the "message" field.
     async def _gemini_response(self, user_message: str) -> tuple[str, bool]:
         """Get response from Gemini API."""
         try:
-            response = self._chat.send_message(user_message)
+            response = await asyncio.to_thread(self._chat.send_message, user_message)
             reply = response.text
             is_ready = "ROADMAP_READY" in reply
             return reply, is_ready
@@ -261,4 +276,10 @@ You can customize the "message" field.
         self.roadmap = None
         self._demo_step = 0
         if self._chat and not self._offline:
-            self._chat = self._model.start_chat(history=[])
+            self._chat = self._client.chats.create(
+                model="gemini-2.5-flash",
+                config=types.GenerateContentConfig(
+                    system_instruction=self._system_prompt,
+                    temperature=0.7,
+                )
+            )

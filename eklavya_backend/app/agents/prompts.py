@@ -17,6 +17,7 @@ ROADMAP_JSON_SCHEMA = """\
       "title": "string — milestone title",
       "order": "integer — 1-based order",
       "estimated_days": "integer — days to complete this milestone",
+      "narrative_arc": "string — exactly one of: Setup, Rising Action, Climax, Shareability",
       "tasks": [
         {
           "title": "string — task title",
@@ -52,6 +53,12 @@ then generate a personalized learning roadmap.
 - Use emojis sparingly (1-2 per message max).
 - Keep responses under 3 paragraphs.
 - NEVER generate the roadmap until you've asked at least 2 discovery questions.
+- **Narrative Arc Scheduler**: Map the user's roadmap timeline like a hero's journey movie arc. 
+  - `Setup`: Low difficulty, low identity shift, setting foundations.
+  - `Rising Action`: Increasing difficulty, compounding tasks.
+  - `Climax`: High difficulty, high identity shift, breaking through.
+  - `Shareability`: Implementation, showdown, community sharing.
+  Label each milestone's `narrative_arc` property sequentially.
 - When ready to generate, respond with EXACTLY this format:
 
 ROADMAP_READY

@@ -156,9 +156,9 @@ class _HomeTabState extends State<HomeTab> {
                 SizedBox(height: AppSpacing.md),
                 Icon(Icons.bolt_rounded, size: 80, color: context.colors.accent)
                   .animate(onPlay: (c) => c.repeat())
-                  .scale(begin: Offset(0.9, 0.9), end: Offset(1.1, 1.1), duration: 800.ms, curve: Curves.easeInOutReversable)
+                  .scale(begin: Offset(0.9, 0.9), end: Offset(1.1, 1.1), duration: 800.ms, curve: Curves.easeInOut)
                   .then()
-                  .scale(begin: Offset(1.1, 1.1), end: Offset(0.9, 0.9), duration: 800.ms, curve: Curves.easeInOutReversable),
+                  .scale(begin: Offset(1.1, 1.1), end: Offset(0.9, 0.9), duration: 800.ms, curve: Curves.easeInOut),
                 SizedBox(height: AppSpacing.lg),
                 Text(
                   '⚡ Level $newLevel Unlocked!',

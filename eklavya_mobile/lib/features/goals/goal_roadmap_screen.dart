@@ -71,7 +71,7 @@ class _GoalRoadmapScreenState extends State<GoalRoadmapScreen> {
     if (result != null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('+${result.$1} XP earned! ⭐'),
+          content: Text('+${result.xpEarned}${result.bonusXp > 0 ? " (+${result.bonusXp} bonus)" : ""} XP earned! ⭐'),
           backgroundColor: context.colors.success,
           duration: Duration(seconds: 2),
         ),

@@ -163,17 +163,23 @@ class TaskItem {
 class MilestoneItem {
   final String id;
   final String title;
+  final String? narrativeArc;
   final List<TaskItem> tasks;
 
   MilestoneItem({
     required this.id,
     required this.title,
+    this.narrativeArc,
     this.tasks = const [],
   });
 
-  factory MilestoneItem.fromJson(Map<String, dynamic> json) => MilestoneItem(
-        id: json['id'] ?? '',
-        title: json['title'] ?? '',
-        tasks: [], // populated later
-      );
+  factory MilestoneItem.fromJson(Map<String, dynamic> json) {
+    final metadata = json['metadata'] as Map<String, dynamic>? ?? {};
+    return MilestoneItem(
+      id: json['id'] ?? '',
+      title: json['title'] ?? '',
+      narrativeArc: metadata['narrative_arc'] as String?,
+      tasks: [], // populated later
+    );
+  }
 }

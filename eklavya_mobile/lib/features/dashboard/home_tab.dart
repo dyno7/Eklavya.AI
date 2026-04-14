@@ -5,6 +5,7 @@ import 'package:lottie/lottie.dart';
 
 import '../../core/services/dashboard_service.dart';
 import '../../core/services/notification_service.dart';
+import '../../core/services/coach_service.dart';
 import '../../core/services/roadmap_sync_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_radii.dart';
@@ -22,7 +23,9 @@ class HomeTab extends StatefulWidget {
 class _HomeTabState extends State<HomeTab> {
   final _dashboardService = DashboardService();
   final _notificationService = NotificationService();
+  final _coachService = CoachService();
   DashboardSummary? _data;
+  CoachStatusResponse? _coachStatus;
   int _unreadNotifications = 0;
 
   @override
@@ -45,14 +48,16 @@ class _HomeTabState extends State<HomeTab> {
   Future<void> _fetchDashboard() async {
     final summaryFuture = _dashboardService.getSummary();
     final notifsFuture = _notificationService.getMyNotifications();
+    final coachFuture = _coachService.fetchStatus();
     
-    final results = await Future.wait([summaryFuture, notifsFuture]);
+    final results = await Future.wait([summaryFuture, notifsFuture, coachFuture]);
     if (!mounted) return;
     
     final notifs = results[1] as List<NotificationItem>;
     setState(() {
       _data = results[0] as DashboardSummary;
       _unreadNotifications = notifs.where((n) => !n.readStatus).length;
+      _coachStatus = results[2] as CoachStatusResponse?;
     });
   }
 
@@ -255,6 +260,44 @@ class _HomeTabState extends State<HomeTab> {
     return 'Good Night,';
   }
 
+  Widget _buildCoachIndicator() {
+    if (_coachStatus == null) return const SizedBox.shrink();
+    Color bgColor = context.colors.success;
+    IconData icon = Icons.trending_up_rounded;
+    if (_coachStatus!.state == 'WAVERING') {
+      bgColor = context.colors.warning;
+      icon = Icons.warning_amber_rounded;
+    } else if (_coachStatus!.state == 'SILENT_RECESS') {
+      bgColor = context.colors.error;
+      icon = Icons.snooze_rounded;
+    }
+    
+    return Container(
+      margin: const EdgeInsets.only(top: AppSpacing.sm),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: bgColor.withAlpha(40),
+        border: Border.all(color: bgColor.withAlpha(100)),
+        borderRadius: AppRadii.pill,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: bgColor),
+          const SizedBox(width: 4),
+          Text(
+            _coachStatus!.state,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: bgColor,
+            ),
+          )
+        ],
+      )
+    );
+  }
+
   IconData _getTaskIcon(String type) {
     switch (type) {
       case 'watch': return Icons.play_circle_fill_rounded;
@@ -344,6 +387,7 @@ class _HomeTabState extends State<HomeTab> {
                             ),
                           ],
                         ),
+                        _buildCoachIndicator(),
                       ],
                     ),
                   ),

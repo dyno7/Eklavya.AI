@@ -152,7 +152,30 @@ class _GoalRoadmapScreenState extends State<GoalRoadmapScreen> {
                               : Text('$index', style: TextStyle(color: context.colors.primary, fontWeight: FontWeight.bold)),
                         ),
                       ),
-                      title: Text(milestone.title, style: theme.textTheme.titleLarge),
+                      title: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (milestone.narrativeArc != null) ...[
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: context.colors.primary.withAlpha(40),
+                                borderRadius: AppRadii.sm,
+                              ),
+                              child: Text(
+                                milestone.narrativeArc!.toUpperCase(),
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: context.colors.primary,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 1.2,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                          ],
+                          Text(milestone.title, style: theme.textTheme.titleLarge),
+                        ],
+                      ),
                       subtitle: Text('$completedTasks/${milestone.tasks.length} tasks complete', style: theme.textTheme.bodySmall?.copyWith(color: context.colors.textSecondary)),
                       children: milestone.tasks.map((task) {
                         final isCompleted = task.status == 'completed';

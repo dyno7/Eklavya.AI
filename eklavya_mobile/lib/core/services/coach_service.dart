@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'auth_service.dart';
-import '../../env.dart';
+import '../config/app_config.dart';
 
 class CoachStatusResponse {
   final double gdiScore;
@@ -34,7 +34,7 @@ class CoachService {
 
     try {
       final response = await http.get(
-        Uri.parse('${Env.apiUrl}/api/v1/coach/status'),
+        Uri.parse('${AppConfig.backendUrl}/api/v1/coach/status'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
@@ -56,7 +56,7 @@ class CoachService {
 
     try {
       await http.post(
-        Uri.parse('${Env.apiUrl}/api/v1/analytics/session_start'),
+        Uri.parse('${AppConfig.backendUrl}/api/v1/analytics/session_start'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',

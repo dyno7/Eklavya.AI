@@ -62,7 +62,7 @@ class GdiService:
         v_t = min(1.0, empty_sessions / 10.0)
 
         # 3. c(t): Avoidance parameter. Easy tasks completed while hard tasks are pending
-        # Here we approximate: proportion of recent easy tasks vs total.
+        # Heuristic: tasks with xp_reward <= 15 are considered "easy".
         stmt_c = (
             select(func.count(Task.id))
             .join(Milestone, Task.milestone_id == Milestone.id)
@@ -71,7 +71,7 @@ class GdiService:
                 Goal.user_id == user_id,
                 Task.status == 'completed',
                 Task.completed_at >= seven_days_ago,
-                Task.estimated_minutes < 20
+                Task.xp_reward <= 15
             )
         )
         easy_tasks_completed = (await db.execute(stmt_c)).scalar() or 0

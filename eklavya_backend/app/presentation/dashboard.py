@@ -180,14 +180,17 @@ async def claim_task(
     # 2. Capture previous completion point for streak math.
     previous_completion = await repo.get_latest_task_completion_for_user(db, current_user_id)
 
-    # 3. Complete the task
+    # 3. Capture FK before ORM state is expired (prevents MissingGreenlet).
+    task_milestone_id = task.milestone_id
+
+    # 4. Complete the task
     await repo.update_task_status(db, task_id, TaskStatus.COMPLETED)
 
-    # 4. Expire cached ORM state so subsequent queries fetch fresh rows.
+    # 5. Expire cached ORM state so subsequent queries fetch fresh rows.
     db.expire_all()
 
-    # 5. Advance milestone / goal state when all nested tasks are complete.
-    milestone = await repo.get_milestone_by_id(db, task.milestone_id)
+    # 6. Advance milestone / goal state when all nested tasks are complete.
+    milestone = await repo.get_milestone_by_id(db, task_milestone_id)
     bonus_xp_from_milestone = 0
     bonus_xp_from_goal = 0
 

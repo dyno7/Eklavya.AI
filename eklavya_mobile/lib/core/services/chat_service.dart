@@ -10,11 +10,13 @@ class ChatMessage {
   final String text;
   final bool isUser;
   final DateTime timestamp;
+  final List<String>? options;
 
   ChatMessage({
     required this.text,
     required this.isUser,
     DateTime? timestamp,
+    this.options,
   }) : timestamp = timestamp ?? DateTime.now();
 }
 
@@ -70,7 +72,7 @@ class ChatService {
 
   /// Send a message and get the Guru's reply.
   /// Returns (replyText, isRoadmapReady, roadmapJson, navigateToRoadmap)
-  Future<(String, bool, Map<String, dynamic>?, bool)> sendMessage(String message) async {
+  Future<(String, bool, Map<String, dynamic>?, bool, List<String>?)> sendMessage(String message) async {
     try {
       final body = <String, dynamic>{
         'message': message,
@@ -89,13 +91,15 @@ class ChatService {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        // Track session_id from response
         _currentSessionId = data['session_id'] as String?;
+        final rawOptions = data['options'] as List<dynamic>?;
+        final options = rawOptions?.map((o) => o.toString()).toList();
         return (
           data['reply'] as String,
           data['is_roadmap_ready'] as bool? ?? false,
           data['roadmap'] as Map<String, dynamic>?,
           data['navigate_to_roadmap'] as bool? ?? false,
+          options,
         );
       }
     } catch (e) {
@@ -167,35 +171,32 @@ class ChatService {
   }
 
   /// Offline canned responses for demo when backend isn't running.
-  (String, bool, Map<String, dynamic>?, bool) _offlineResponse(String message) {
+  (String, bool, Map<String, dynamic>?, bool, List<String>?) _offlineResponse(String message) {
     _offlineStep++;
 
     switch (_offlineStep) {
       case 1:
         return (
           "Welcome! I'm your Eklavya Guru 🧠\n\n"
-          "I'd love to help you create a personalized learning roadmap or goal tracker. "
-          "To start — what specific skill or goal do you want to master?",
-          false, null, false,
+          "What skill or goal do you want to master?",
+          false, null, false, null,
         );
       case 2:
         return (
-          "Great choice! That's a fascinating area with lots of practical applications.\n\n"
-          "How would you describe your current experience level? Are you a complete beginner, "
-          "or do you have some programming/math background already?",
+          "Nice! What's your experience level?",
           false, null, false,
+          ["Beginner", "Intermediate", "Advanced"],
         );
       case 3:
         return (
-          "Perfect, that helps me calibrate things nicely.\n\n"
-          "One more thing — how much time can you realistically commit per day? "
-          "Even 30 minutes of focused learning adds up quickly!",
+          "How much time can you commit per day?",
           false, null, false,
+          ["30 min/day", "1 hr/day", "2+ hrs/day"],
         );
       default:
         return (
-          "🎉 Your personalized roadmap is ready! I've created a structured plan tailored just for you.",
-          true, _demoRoadmap(), false,
+          "🎉 Your roadmap is ready!",
+          true, _demoRoadmap(), false, null,
         );
     }
   }

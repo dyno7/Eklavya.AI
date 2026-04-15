@@ -63,6 +63,7 @@ class ChatSendResponse(BaseModel):
     roadmap: dict | None = None
     goal_id: str | None = None
     navigate_to_roadmap: bool = False
+    options: list[str] | None = None
 
 
 class ChatHistoryResponse(BaseModel):
@@ -132,7 +133,7 @@ async def send_message(
 
     agent = _get_or_create_agent(session_user_id, request.domain, roadmap_context, memory_context)
 
-    reply, is_roadmap_ready, navigate_to_roadmap = await agent.chat(request.message)
+    reply, is_roadmap_ready, navigate_to_roadmap, options = await agent.chat(request.message)
 
     goal_id = None
     if is_roadmap_ready and agent.roadmap:
@@ -163,6 +164,7 @@ async def send_message(
         roadmap=agent.roadmap if is_roadmap_ready else None,
         goal_id=goal_id,
         navigate_to_roadmap=navigate_to_roadmap,
+        options=options,
     )
 
 

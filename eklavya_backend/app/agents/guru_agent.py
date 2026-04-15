@@ -83,12 +83,12 @@ You can customize the "message" field.
             self._offline = True
             self._demo_step = 0
 
-    async def chat(self, user_message: str) -> tuple[str, bool, bool]:
+    async def chat(self, user_message: str) -> tuple[str, bool, bool, list[str] | None]:
         """
         Send a user message and get the Guru's reply.
 
         Returns:
-            (reply_text, is_roadmap_ready, navigate_to_roadmap)
+            (reply_text, is_roadmap_ready, navigate_to_roadmap, options)
         """
         self.history.append({"role": "user", "content": user_message})
 
@@ -97,31 +97,33 @@ You can customize the "message" field.
         else:
             reply, is_ready = await self._gemini_response(user_message)
 
+        # Parse QUICK_REPLY options from the reply
+        options = self._extract_quick_reply(reply)
+        if options:
+            reply = re.sub(r'\n?QUICK_REPLY:\[.*?\]', '', reply).strip()
+
         self.history.append({"role": "assistant", "content": reply})
 
         # Check if the reply contains a roadmap
         if is_ready:
             self.roadmap = self._extract_roadmap(reply)
             if self.roadmap:
-                # Clean the reply — remove the JSON block for display
                 clean_reply = re.sub(
                     r"ROADMAP_READY\s*```json\s*[\s\S]*?```",
-                    "🎉 Your personalized roadmap is ready! I've created a structured plan tailored just for you.",
+                    "🎉 Your roadmap is ready!",
                     reply,
                 )
                 self.history[-1]["content"] = clean_reply
-                return clean_reply, True, False
+                return clean_reply, True, False, None
 
         # Parse navigate_to signals
         navigate_to_roadmap = False
         try:
-            # Check for direct JSON
             parsed = json.loads(reply)
             if parsed.get("navigate_to") == "roadmap":
                 navigate_to_roadmap = True
                 reply = parsed.get("message", "Navigating to your roadmap!")
         except Exception:
-            # Check if buried in markdown
             match = re.search(r"```json\s*({[\s\S]*?})\s*```", reply)
             if match:
                 try:
@@ -132,10 +134,20 @@ You can customize the "message" field.
                 except Exception:
                     pass
 
-        # Update history with cleaned reply if we extracted json
         self.history[-1]["content"] = reply
+        return reply, False, navigate_to_roadmap, options
 
-        return reply, False, navigate_to_roadmap
+    @staticmethod
+    def _extract_quick_reply(text: str) -> list[str] | None:
+        """Extract QUICK_REPLY:[...] options from the Guru's response."""
+        match = re.search(r'QUICK_REPLY:\[(.+?)\]', text)
+        if match:
+            try:
+                items = json.loads(f'[{match.group(1)}]')
+                return [str(i) for i in items]
+            except Exception:
+                pass
+        return None
 
     async def _gemini_response(self, user_message: str) -> tuple[str, bool]:
         """Get response from Gemini API."""

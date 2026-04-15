@@ -38,9 +38,7 @@ class _ChatTabState extends State<ChatTab> {
 
   void _addGreeting() {
     _messages.add(ChatMessage(
-      text: "Hello! I'm your Eklavya Guru 🧠\n\n"
-          "I'll help you create a personalized roadmap. "
-          "Tell me — what specific skill, project, or goal do you want to master today?",
+      text: "Hey! What skill or goal do you want to master? 🧠",
       isUser: false,
     ));
   }
@@ -93,8 +91,8 @@ class _ChatTabState extends State<ChatTab> {
     super.dispose();
   }
 
-  Future<void> _sendMessage() async {
-    final text = _controller.text.trim();
+  Future<void> _sendMessage([String? overrideText]) async {
+    final text = overrideText ?? _controller.text.trim();
     if (text.isEmpty || _isTyping) return;
 
     setState(() {
@@ -104,13 +102,13 @@ class _ChatTabState extends State<ChatTab> {
     });
     _scrollToBottom();
 
-    await Future.delayed(Duration(milliseconds: 800));
+    await Future.delayed(Duration(milliseconds: 400));
 
-    final (reply, isReady, roadmap, navigateToRoadmap) = await _chatService.sendMessage(text);
+    final (reply, isReady, roadmap, navigateToRoadmap, options) = await _chatService.sendMessage(text);
 
     setState(() {
       _isTyping = false;
-      _messages.add(ChatMessage(text: reply, isUser: false));
+      _messages.add(ChatMessage(text: reply, isUser: false, options: options));
       if (isReady) {
         _roadmapReady = true;
         _roadmap = roadmap;
@@ -122,8 +120,6 @@ class _ChatTabState extends State<ChatTab> {
     }
 
     _scrollToBottom();
-
-    // Refresh sessions list after sending (new session may have been created)
     _loadSessions();
 
     if (navigateToRoadmap || isReady) {
@@ -267,7 +263,10 @@ class _ChatTabState extends State<ChatTab> {
                     _buildSuccessBar(context, theme),
                     SizedBox(height: AppSpacing.md),
                   ],
-                  _buildInputBar(context, theme),
+                  if (_hasActiveOptions && !_roadmapReady)
+                    _buildOptionChips(context, theme)
+                  else
+                    _buildInputBar(context, theme),
                 ],
               ),
             ),
@@ -397,6 +396,48 @@ class _ChatTabState extends State<ChatTab> {
           ],
         ),
       ),
+    );
+  }
+
+  bool get _hasActiveOptions {
+    if (_messages.isEmpty) return false;
+    final last = _messages.last;
+    return !last.isUser && last.options != null && last.options!.isNotEmpty;
+  }
+
+  Widget _buildOptionChips(BuildContext context, ThemeData theme) {
+    final options = _messages.last.options!;
+    return Wrap(
+      spacing: AppSpacing.sm,
+      runSpacing: AppSpacing.sm,
+      alignment: WrapAlignment.center,
+      children: options.map((option) {
+        return GestureDetector(
+          onTap: () => _sendMessage(option),
+          child: Container(
+            padding: EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+            decoration: BoxDecoration(
+              gradient: context.colors.primaryGradient,
+              borderRadius: AppRadii.pill,
+              boxShadow: [
+                BoxShadow(
+                  color: context.colors.primary.withAlpha(60),
+                  blurRadius: 8,
+                  offset: Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Text(
+              option,
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+                fontSize: 14,
+              ),
+            ),
+          ),
+        ).animate().fadeIn(duration: 300.ms).scale(begin: Offset(0.9, 0.9), end: Offset(1, 1), duration: 300.ms);
+      }).toList(),
     );
   }
 

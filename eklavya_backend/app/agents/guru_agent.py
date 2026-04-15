@@ -150,9 +150,17 @@ You can customize the "message" field.
         return None
 
     async def _gemini_response(self, user_message: str) -> tuple[str, bool]:
-        """Get response from Gemini API."""
+        """Get response from Gemini API. Uses low token limit for conversation, high for roadmap generation."""
+        # After 3+ user turns, the next response is likely roadmap generation — allow more tokens
+        user_turn_count = sum(1 for m in self.history if m["role"] == "user")
+        max_tokens = 2500 if user_turn_count >= 4 else 100
+
         try:
-            response = await asyncio.to_thread(self._chat.send_message, user_message)
+            response = await asyncio.to_thread(
+                self._chat.send_message,
+                user_message,
+                config=types.GenerateContentConfig(max_output_tokens=max_tokens),
+            )
             reply = response.text
             is_ready = "ROADMAP_READY" in reply
             return reply, is_ready

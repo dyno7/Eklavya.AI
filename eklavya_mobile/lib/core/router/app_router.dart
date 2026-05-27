@@ -8,6 +8,7 @@ import '../../features/analytics/analytics_tab.dart';
 import '../../features/auth/login_screen.dart';
 import '../../features/auth/signup_screen.dart';
 import '../../features/chat/chat_tab.dart';
+import '../../features/coach/coach_page.dart';
 import '../../features/dashboard/home_tab.dart';
 import '../../features/goals/goals_tab.dart';
 import '../../features/onboarding/onboarding_screen.dart';
@@ -99,7 +100,7 @@ final GoRouter appRouter = GoRouter(
             ),
           ],
         ),
-        // Tab 2: Chat
+        // Tab 2: Chat (Guru — roadmap generator)
         StatefulShellBranch(
           routes: [
             GoRoute(
@@ -108,7 +109,16 @@ final GoRouter appRouter = GoRouter(
             ),
           ],
         ),
-        // Tab 3: Analytics
+        // Tab 3: Coach (learning doubts + resources)
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/coach',
+              builder: (context, state) => const CoachPage(),
+            ),
+          ],
+        ),
+        // Tab 4: Analytics
         StatefulShellBranch(
           routes: [
             GoRoute(

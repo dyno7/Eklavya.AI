@@ -388,3 +388,32 @@ class RewardSignalLog(Base):
     action_type: Mapped[str] = mapped_column(String(100))
     reward_value: Mapped[float] = mapped_column(Float, default=0.0, server_default=text("0.0"))
 
+
+class UserGDIWeights(Base):
+    """
+    Per-user adaptive GDI formula weights.
+    Populated by AdaptiveGDI.record_outcome() on milestone/goal completion or churn.
+    Falls back to global defaults (alpha=0.4, beta=-0.2, gamma=-0.2, delta=-0.3)
+    if no row exists for a user (cold-start safe).
+    """
+    __tablename__ = "user_gdi_weights"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    alpha: Mapped[float] = mapped_column(Float, default=0.4,  server_default=text("0.4"))
+    beta:  Mapped[float] = mapped_column(Float, default=-0.2, server_default=text("-0.2"))
+    gamma: Mapped[float] = mapped_column(Float, default=-0.2, server_default=text("-0.2"))
+    delta: Mapped[float] = mapped_column(Float, default=-0.3, server_default=text("-0.3"))
+    update_count: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()")
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<UserGDIWeights {self.user_id} "
+            f"α={self.alpha:.2f} β={self.beta:.2f} γ={self.gamma:.2f} δ={self.delta:.2f} "
+            f"n={self.update_count}>"
+        )
+

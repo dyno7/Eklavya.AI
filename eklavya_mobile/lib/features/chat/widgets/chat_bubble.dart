@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
@@ -80,6 +81,72 @@ class ChatBubble extends StatelessWidget {
                       color: isUser ? Colors.white60 : context.colors.textTertiary,
                     ),
                   ),
+                  if (!isUser && (message.resources?.isNotEmpty ?? false)) ...[
+                    SizedBox(height: AppSpacing.sm),
+                    Text(
+                      'Resources',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: context.colors.textSecondary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    SizedBox(height: 6),
+                    ...message.resources!.map((resource) {
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: InkWell(
+                          onTap: () async {
+                            final uri = Uri.tryParse(resource.url);
+                            if (uri != null && await canLaunchUrl(uri)) {
+                              await launchUrl(uri, mode: LaunchMode.externalApplication);
+                            }
+                          },
+                          borderRadius: BorderRadius.circular(14),
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: context.colors.primary.withAlpha(18),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(color: context.colors.primary.withAlpha(32)),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(Icons.link_rounded, size: 16, color: context.colors.primaryLight),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        resource.title.isNotEmpty ? resource.title : resource.url,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: theme.textTheme.bodySmall?.copyWith(
+                                          color: context.colors.textPrimary,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      if ((resource.milestoneTitle ?? '').isNotEmpty)
+                                        Text(
+                                          resource.milestoneTitle!,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: theme.textTheme.labelSmall?.copyWith(
+                                            color: context.colors.textTertiary,
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                                Icon(Icons.open_in_new_rounded, size: 14, color: context.colors.textSecondary),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    }),
+                  ],
                 ],
               ),
             ),

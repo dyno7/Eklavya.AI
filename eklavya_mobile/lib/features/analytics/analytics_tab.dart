@@ -113,7 +113,7 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
   }
 
   // ─── 1. Weekly XP — Proper Row Layout ────────────────
-  Widget _buildWeeklyXpCard(BuildContext context, ThemeData theme, List<int> weeklyXp, UserSummary userStats) {
+  Widget _buildWeeklyXpCard(BuildContext context, ThemeData theme, List<int> weeklyXp, UserStats userStats) {
     final maxWeeklyXp = weeklyXp.reduce((a, b) => a > b ? a : b).toDouble();
     const days = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
@@ -206,7 +206,7 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
   }
 
   // ─── 2. Full Month Streak Calendar Grid ──────────────
-  Widget _buildStreakCalendar(BuildContext context, ThemeData theme, UserSummary userStats) {
+  Widget _buildStreakCalendar(BuildContext context, ThemeData theme, UserStats userStats) {
     final now = DateTime.now();
     final firstDayOfMonth = DateTime(now.year, now.month, 1);
     final daysInMonth = DateTime(now.year, now.month + 1, 0).day;

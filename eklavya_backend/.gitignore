@@ -1,5 +1,27 @@
+# Secrets
 .env
+
+# Python
 .venv/
 __pycache__/
 *.pyc
 .pytest_cache/
+*.egg-info/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Debug artifacts
+*.txt
+!README.md
+curl_*.json
+inspect_*.py
+fix_*.py
+test_*.py
+migration*.sql
+
+# OS
+.DS_Store
+Thumbs.db

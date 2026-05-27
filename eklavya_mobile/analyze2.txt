@@ -1,4 +1,0 @@
-Analyzing eklavya_mobile...                                     
-
-  error - Expected to find ')' - lib\features\notifications\notifications_screen.dart:120:108 - expected_token
-

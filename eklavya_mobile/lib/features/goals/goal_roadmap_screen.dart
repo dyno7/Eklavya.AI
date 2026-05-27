@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/services/coach_context_service.dart';
 import '../../core/services/dashboard_service.dart';
 import '../../core/services/goals_service.dart';
 import '../../core/theme/app_colors.dart';
@@ -24,11 +26,25 @@ class _GoalRoadmapScreenState extends State<GoalRoadmapScreen> {
   
   List<MilestoneItem>? _milestones;
   final Set<String> _completingTasks = {};
+  int _currentStreak = 0;
 
   @override
   void initState() {
     super.initState();
-    _fetchRoadmap();
+    _fetchAll();
+  }
+
+  Future<void> _fetchAll() async {
+    final results = await Future.wait([
+      _goalsService.fetchGoalRoadmap(widget.goal.id),
+      _dashboardService.getSummary(),
+    ]);
+    if (!mounted) return;
+    setState(() {
+      _milestones = results[0] as List<MilestoneItem>;
+      final summary = results[1] as DashboardSummary?;
+      _currentStreak = summary?.user.currentStreak ?? 0;
+    });
   }
 
   Future<void> _fetchRoadmap() async {
@@ -46,21 +62,21 @@ class _GoalRoadmapScreenState extends State<GoalRoadmapScreen> {
       _completingTasks.add(task.id);
     });
 
-    final result = await _dashboardService.completeTask(task.id);
+    final outcome = await _dashboardService.completeTask(task.id);
     if (!mounted) return;
 
     setState(() {
       _completingTasks.remove(task.id);
-      // Optimistically update
-      if (result != null) {
-        // find and update the task status in local state
+      if (outcome is TaskClaimResult) {
         for (var m in _milestones!) {
-          for (int i=0; i<m.tasks.length; i++) {
+          for (int i = 0; i < m.tasks.length; i++) {
             if (m.tasks[i].id == task.id) {
               m.tasks[i] = TaskItem(
-                id: task.id, title: task.title, type: task.type, 
+                id: task.id, title: task.title, type: task.type,
                 xpReward: task.xpReward, status: 'completed',
                 estimatedMinutes: task.estimatedMinutes,
+                description: task.description,
+                resources: task.resources,
               );
             }
           }
@@ -68,16 +84,80 @@ class _GoalRoadmapScreenState extends State<GoalRoadmapScreen> {
       }
     });
 
-    if (result != null) {
+    if (outcome is TaskClaimResult) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('+${result.xpEarned}${result.bonusXp > 0 ? " (+${result.bonusXp} bonus)" : ""} XP earned! ⭐'),
+          content: Text('+${outcome.xpEarned}${outcome.bonusXp > 0 ? " (+${outcome.bonusXp} bonus)" : ""} XP earned! ⭐'),
           backgroundColor: context.colors.success,
-          duration: Duration(seconds: 2),
+          duration: const Duration(seconds: 2),
         ),
       );
       await _fetchRoadmap();
+    } else if (outcome is TaskClaimError) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Couldn't complete task: ${outcome.message}"),
+          backgroundColor: context.colors.error,
+          duration: const Duration(seconds: 4),
+        ),
+      );
     }
+  }
+
+  Widget _buildStreakBanner(ThemeData theme) {
+    if (_currentStreak == 0) return const SizedBox.shrink();
+
+    final Color color;
+    final String label;
+    final String subtitle;
+    final IconData icon;
+
+    if (_currentStreak >= 7) {
+      color = const Color(0xFFFF6B35);
+      icon = Icons.local_fire_department_rounded;
+      label = '$_currentStreak-day streak — ambitious pacing unlocked';
+      subtitle = 'This roadmap was tuned for high momentum. Later milestones are more challenging.';
+    } else if (_currentStreak >= 3) {
+      color = const Color(0xFFFFB800);
+      icon = Icons.bolt_rounded;
+      label = '$_currentStreak-day streak — balanced progression';
+      subtitle = 'Difficulty scales steadily across milestones to keep you growing.';
+    } else {
+      color = const Color(0xFF6B9BFF);
+      icon = Icons.trending_up_rounded;
+      label = 'Building momentum — easy start enabled';
+      subtitle = 'The first milestone is lightweight. Complete it to build your streak.';
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: AppSpacing.lg),
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm + 2),
+      decoration: BoxDecoration(
+        color: color.withAlpha(20),
+        borderRadius: AppRadii.md,
+        border: Border.all(color: color.withAlpha(60)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 20),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label,
+                    style: theme.textTheme.labelLarge?.copyWith(
+                        color: color, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 2),
+                Text(subtitle,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                        color: context.colors.textSecondary, height: 1.3)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   IconData _getTaskIcon(String type) {
@@ -122,6 +202,8 @@ class _GoalRoadmapScreenState extends State<GoalRoadmapScreen> {
                         Text(widget.goal.title, style: theme.textTheme.headlineMedium),
                         SizedBox(height: 8),
                         Text(widget.goal.description, style: theme.textTheme.bodyMedium?.copyWith(color: context.colors.textSecondary)),
+                        SizedBox(height: AppSpacing.lg),
+                        _buildStreakBanner(theme),
                       ],
                     ),
                   );
@@ -218,15 +300,112 @@ class _GoalRoadmapScreenState extends State<GoalRoadmapScreen> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
+                                    // Task description
+                                    if (task.description.isNotEmpty) ...[
+                                      Text(
+                                        task.description,
+                                        style: theme.textTheme.bodyMedium?.copyWith(
+                                          color: context.colors.textPrimary,
+                                          height: 1.5,
+                                        ),
+                                      ),
+                                      SizedBox(height: AppSpacing.md),
+                                    ],
+                                    // Meta row
                                     Row(children: [
                                       Icon(Icons.timer_outlined, size: 14, color: context.colors.textSecondary),
                                       SizedBox(width: 4),
                                       Text('~${task.estimatedMinutes} min', style: theme.textTheme.labelMedium?.copyWith(color: context.colors.textSecondary)),
+                                      SizedBox(width: AppSpacing.md),
+                                      Icon(_getTaskIcon(task.type), size: 14, color: context.colors.textSecondary),
+                                      SizedBox(width: 4),
+                                      Text(
+                                        '${task.type[0].toUpperCase()}${task.type.substring(1)}',
+                                        style: theme.textTheme.labelMedium?.copyWith(color: context.colors.textSecondary),
+                                      ),
                                     ]),
-                                    SizedBox(height: 6),
-                                    Text(
-                                      'Type: ${task.type[0].toUpperCase()}${task.type.substring(1)} • ${task.xpReward} XP reward',
-                                      style: theme.textTheme.bodySmall?.copyWith(color: context.colors.textSecondary),
+                                    // Resource links
+                                    if (task.resources.isNotEmpty) ...[
+                                      SizedBox(height: AppSpacing.md),
+                                      Text(
+                                        'Resources',
+                                        style: theme.textTheme.labelLarge?.copyWith(
+                                          color: context.colors.textPrimary,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      SizedBox(height: AppSpacing.xs),
+                                      ...task.resources.map((res) => Padding(
+                                        padding: EdgeInsets.only(bottom: AppSpacing.xs),
+                                        child: InkWell(
+                                          onTap: () async {
+                                            final uri = Uri.tryParse(res.url);
+                                            if (uri != null && await canLaunchUrl(uri)) {
+                                              await launchUrl(uri, mode: LaunchMode.externalApplication);
+                                            }
+                                          },
+                                          borderRadius: AppRadii.sm,
+                                          child: Container(
+                                            padding: EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+                                            decoration: BoxDecoration(
+                                              color: context.colors.primary.withAlpha(20),
+                                              borderRadius: AppRadii.sm,
+                                              border: Border.all(color: context.colors.primary.withAlpha(40)),
+                                            ),
+                                            child: Row(
+                                              children: [
+                                                Icon(Icons.link_rounded, size: 16, color: context.colors.primaryLight),
+                                                SizedBox(width: AppSpacing.sm),
+                                                Expanded(
+                                                  child: Text(
+                                                    res.title.isNotEmpty ? res.title : res.url,
+                                                    style: theme.textTheme.bodySmall?.copyWith(
+                                                      color: context.colors.primaryLight,
+                                                      decoration: TextDecoration.underline,
+                                                    ),
+                                                    maxLines: 1,
+                                                    overflow: TextOverflow.ellipsis,
+                                                  ),
+                                                ),
+                                                Icon(Icons.open_in_new_rounded, size: 14, color: context.colors.primaryLight),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      )),
+                                    ],
+                                    // Ask Coach button
+                                    SizedBox(height: AppSpacing.md),
+                                    GestureDetector(
+                                      onTap: () {
+                                        CoachContextService.setContext(CoachTaskContext(
+                                          taskTitle: task.title,
+                                          taskDescription: task.description.isNotEmpty ? task.description : null,
+                                          taskType: task.type,
+                                          milestoneTitle: milestone.title,
+                                        ));
+                                        context.go('/coach');
+                                      },
+                                      child: Container(
+                                        padding: EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm + 2),
+                                        decoration: BoxDecoration(
+                                          gradient: LinearGradient(
+                                            colors: [context.colors.secondary.withAlpha(200), context.colors.accent.withAlpha(200)],
+                                          ),
+                                          borderRadius: AppRadii.pill,
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(Icons.psychology_rounded, size: 16, color: Colors.white),
+                                            SizedBox(width: AppSpacing.sm),
+                                            Text(
+                                              'Ask Coach',
+                                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
                                     ),
                                   ],
                                 ),

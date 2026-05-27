@@ -130,32 +130,51 @@ class GoalsService {
   }
 }
 
+class TaskResource {
+  final String title;
+  final String url;
+
+  TaskResource({required this.title, required this.url});
+
+  factory TaskResource.fromJson(Map<String, dynamic> json) => TaskResource(
+        title: json['title'] ?? '',
+        url: json['url'] ?? '',
+      );
+}
+
 class TaskItem {
   final String id;
   final String title;
+  final String description;
   final String type;
   final int xpReward;
   final String status;
   final int estimatedMinutes;
+  final List<TaskResource> resources;
 
   TaskItem({
     required this.id,
     required this.title,
+    this.description = '',
     required this.type,
     required this.xpReward,
     required this.status,
     this.estimatedMinutes = 30,
+    this.resources = const [],
   });
 
   factory TaskItem.fromJson(Map<String, dynamic> json) {
     final metadata = json['metadata'] as Map<String, dynamic>? ?? {};
+    final rawResources = metadata['resources'] as List<dynamic>? ?? [];
     return TaskItem(
       id: json['id'] ?? '',
       title: json['title'] ?? '',
+      description: json['description'] ?? '',
       type: json['task_type'] ?? 'custom',
       xpReward: json['xp_reward'] ?? 10,
       status: json['status'] ?? 'pending',
       estimatedMinutes: (metadata['estimated_minutes'] as int?) ?? (json['estimated_minutes'] as int?) ?? 30,
+      resources: rawResources.map((r) => TaskResource.fromJson(r as Map<String, dynamic>)).toList(),
     );
   }
 }

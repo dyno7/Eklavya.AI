@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(uv run *)",
+      "Bash(echo \"PID: $!\")",
+      "Bash(curl -s http://localhost:8000/health)",
+      "Bash(curl -s http://localhost:8000/)",
+      "PowerShell(try { \\(Invoke-WebRequest -Uri \"http://localhost:8000/docs\" -TimeoutSec 3\\).StatusCode } catch { $_.Exception.Message }; try { \\(Invoke-WebRequest -Uri \"http://localhost:8000/health\" -TimeoutSec 3\\).Content } catch { $_.Exception.Message })",
+      "Bash(xargs grep -l \"resources\")",
+      "Bash(git add *)"
+    ]
+  }
+}

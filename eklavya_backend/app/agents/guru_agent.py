@@ -27,6 +27,8 @@ class GuruAgent:
         user_id: str,
         roadmap_context: str | None = None,
         memory_context: str | None = None,
+        current_streak: int | None = None,
+        coach_state: str | None = None,
     ):
         self.domain = domain
         self.user_id = user_id
@@ -34,28 +36,52 @@ class GuruAgent:
         self.roadmap: dict | None = None
         
         # Base capability scalar (Adaptive Goal Decomposition)
-        # Defaults to 1.0; can be injected during initialization by an endpoint controller.
         self.user_capability_scalar = 1.0
+
+        streak_value = max(0, int(current_streak or 0))
+        if streak_value >= 7:
+            self.user_capability_scalar = 1.15
+            streak_tier = "HIGH"
+        elif streak_value >= 3:
+            self.user_capability_scalar = 1.0
+            streak_tier = "STEADY"
+        else:
+            self.user_capability_scalar = 0.9
+            streak_tier = "REBUILDING"
         
-        adaptive_difficulty_context = (
+        dynamic_context = (
             f"\n\n## Adaptive Goal Decomposition\n"
             f"The user's current capability scalar is {self.user_capability_scalar}. "
             "Multiply the estimated base difficulty/time and xp_reward of generated tasks by this scalar."
         )
 
-        self._system_prompt = get_system_prompt(domain) + adaptive_difficulty_context
-        
+        dynamic_context += (
+            "\n\n## Momentum-Aware Roadmap Pacing\n"
+            f"Current streak: {streak_value} days ({streak_tier}). "
+            "Use a lighter first milestone and shorter tasks when streak is low, a balanced progression for steady streaks, "
+            "and a slightly more ambitious final milestone when the user is on a strong streak. "
+            "Break the roadmap into clear win-sized steps so the user can keep momentum without feeling overwhelmed."
+        )
+
+        if coach_state:
+            dynamic_context += (
+                "\n\n## Coach Signal\n"
+                f"Current coach state: {coach_state}. Use this as a pacing signal when shaping the roadmap: "
+                "ENGAGED users can handle deeper tasks, WAVERING users should get smaller wins and tighter time estimates, "
+                "and SILENT_RECESS users need the most supportive, low-friction breakdown."
+            )
+
         if roadmap_context:
-            self._system_prompt += f"\n\n## User's Current Roadmap\nThe user already has an active roadmap:\n{roadmap_context}\nDo not generate a NEW roadmap unless explicitly requested to overwrite it. Reference their current progress."
+            dynamic_context += f"\n\n## User's Current Roadmap\nThe user already has an active roadmap:\n{roadmap_context}\nDo not generate a NEW roadmap unless explicitly requested to overwrite it. Reference their current progress."
 
         if memory_context:
-            self._system_prompt += (
+            dynamic_context += (
                 "\n\n## Recent Conversation Memory\n"
                 "Use this memory to keep continuity and help the user retrieve or modify existing roadmaps safely:\n"
                 f"{memory_context}"
             )
         
-        self._system_prompt += """
+        dynamic_context += """
 ## Navigation Commands
 If the user explicitly asks to see their roadmap, asks to navigate to it, or asks to start learning, reply using EXACTLY this JSON format (no other text outside of it):
 ```json
@@ -63,6 +89,9 @@ If the user explicitly asks to see their roadmap, asks to navigate to it, or ask
 ```
 You can customize the "message" field.
 """
+
+        # Put the core system prompt LAST so the strict output JSON formatting rules are the final things the model reads.
+        self._system_prompt = dynamic_context + "\n\n" + get_system_prompt(domain)
 
         # Configure Gemini GenAI SDK
         settings = get_settings()
@@ -108,11 +137,16 @@ You can customize the "message" field.
         if is_ready:
             self.roadmap = self._extract_roadmap(reply)
             if self.roadmap:
-                clean_reply = re.sub(
-                    r"ROADMAP_READY\s*```json\s*[\s\S]*?```",
-                    "🎉 Your roadmap is ready!",
-                    reply,
-                )
+                # Reply may be raw JSON (from json mode) or ROADMAP_READY+markdown — strip both.
+                try:
+                    json.loads(reply.strip())
+                    clean_reply = "🎉 Your personalized roadmap is ready! Head to the Goals tab to start learning."
+                except (json.JSONDecodeError, ValueError):
+                    clean_reply = re.sub(
+                        r"ROADMAP_READY\s*```json\s*[\s\S]*?```",
+                        "🎉 Your personalized roadmap is ready! Head to the Goals tab to start learning.",
+                        reply,
+                    )
                 self.history[-1]["content"] = clean_reply
                 return clean_reply, True, False, None
 
@@ -150,23 +184,69 @@ You can customize the "message" field.
         return None
 
     async def _gemini_response(self, user_message: str) -> tuple[str, bool]:
-        """Get response from Gemini API. Uses low token limit for conversation, high for roadmap generation."""
-        # After 3+ user turns, the next response is likely roadmap generation — allow more tokens
-        user_turn_count = sum(1 for m in self.history if m["role"] == "user")
-        max_tokens = 2500 if user_turn_count >= 4 else 100
+        """Get response from Gemini API.
 
+        Flow:
+        1. Normal conversational call (text mode).
+        2. If the model emits ROADMAP_READY (signaling it has enough info), parse
+           the embedded JSON. If parsing succeeds, return it. If the JSON is
+           malformed/truncated, do a second JSON-mode call to get clean output.
+        3. Otherwise return the text reply as-is (more questions / chit-chat).
+        """
         try:
-            response = await asyncio.to_thread(
-                self._chat.send_message,
-                user_message,
-                config=types.GenerateContentConfig(max_output_tokens=max_tokens),
+            response = await asyncio.wait_for(
+                asyncio.to_thread(self._chat.send_message, user_message),
+                timeout=60,
             )
-            reply = response.text
-            is_ready = "ROADMAP_READY" in reply
-            return reply, is_ready
+            reply = response.text or ""
+        except asyncio.TimeoutError:
+            logger.error("Gemini API timed out (conversation pass)")
+            return "I'm taking too long — please send your message again.", False
         except Exception as e:
-            logger.error(f"Gemini API error: {e}")
-            return f"I'm having a moment — could you try again? (Error: {type(e).__name__})", False
+            logger.error("Gemini API error: %s", e)
+            return "I'm having a moment — could you try again?", False
+
+        signaled_ready = "ROADMAP_READY" in reply
+        has_json_block = "```json" in reply and '"milestones"' in reply
+        has_inline_json = reply.strip().startswith("{") and '"milestones"' in reply
+
+        # Try to extract a valid roadmap from the conversational reply.
+        if signaled_ready or has_json_block or has_inline_json:
+            if self._extract_roadmap(reply) is not None:
+                return reply, True
+
+            # The model signaled readiness but the JSON is malformed/missing.
+            # Do a second pass forcing JSON mode for a clean roadmap.
+            logger.info("Model signaled readiness; doing JSON-mode follow-up call")
+            try:
+                followup = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        self._chat.send_message,
+                        "Output the full roadmap JSON now. Return ONLY the JSON object, no surrounding text or markdown.",
+                        config=types.GenerateContentConfig(
+                            response_mime_type="application/json",
+                            max_output_tokens=16000,
+                        ),
+                    ),
+                    timeout=120,
+                )
+                json_reply = (followup.text or "").strip()
+                clean = json_reply.replace("```json", "").replace("```", "").strip()
+                parsed = json.loads(clean)
+                if "milestones" in parsed:
+                    return clean, True
+            except asyncio.TimeoutError:
+                logger.error("Gemini JSON-mode follow-up timed out")
+            except json.JSONDecodeError as e:
+                logger.error("JSON-mode follow-up returned invalid JSON: %s", e)
+            except Exception as e:
+                logger.error("JSON-mode follow-up failed: %s", e)
+
+            # Fall through — return the original reply (without is_ready) so the user
+            # at least sees something. Frontend will not navigate.
+            return reply, False
+
+        return reply, False
 
     def _demo_response(self, user_message: str) -> tuple[str, bool]:
         """Offline demo responses that simulate the Guru conversation flow."""
@@ -278,12 +358,18 @@ You can customize the "message" field.
     def _extract_roadmap(self, text: str) -> dict | None:
         """Extract JSON roadmap from the Guru's response."""
         try:
-            # Look for JSON block after ROADMAP_READY
-            match = re.search(r"```json\s*([\s\S]*?)\s*```", text)
-            if match:
-                return json.loads(match.group(1))
+            # First try parsing it as pure JSON
+            try:
+                parsed = json.loads(text.strip())
+                if "milestones" in parsed:
+                    return parsed
+            except json.JSONDecodeError:
+                # Fallback: Look for JSON block in markdown
+                match = re.search(r"```json\s*([\s\S]*?)\s*```", text)
+                if match:
+                    return json.loads(match.group(1))
         except (json.JSONDecodeError, AttributeError) as e:
-            logger.error(f"Failed to parse roadmap JSON: {e}")
+            logger.error("Failed to parse roadmap JSON: %s", e)
         return None
 
     def get_history(self) -> list[dict[str, str]]:

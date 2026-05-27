@@ -5,18 +5,41 @@ import 'package:http/http.dart' as http;
 import '../config/app_config.dart';
 import '../services/auth_service.dart';
 
+class ChatResource {
+  final String title;
+  final String url;
+  final String? taskTitle;
+  final String? milestoneTitle;
+
+  ChatResource({
+    required this.title,
+    required this.url,
+    this.taskTitle,
+    this.milestoneTitle,
+  });
+
+  factory ChatResource.fromJson(Map<String, dynamic> json) => ChatResource(
+        title: json['title'] ?? '',
+        url: json['url'] ?? '',
+        taskTitle: json['task_title'] as String?,
+        milestoneTitle: json['milestone_title'] as String?,
+      );
+}
+
 /// A single chat message.
 class ChatMessage {
   final String text;
   final bool isUser;
   final DateTime timestamp;
   final List<String>? options;
+  final List<ChatResource>? resources;
 
   ChatMessage({
     required this.text,
     required this.isUser,
     DateTime? timestamp,
     this.options,
+    this.resources,
   }) : timestamp = timestamp ?? DateTime.now();
 }
 
@@ -57,10 +80,11 @@ class ChatService {
 
   String? get currentSessionId => _currentSessionId;
 
-  /// Start a fresh conversation (clears session_id).
-  void startNewSession() {
+  /// Start a fresh conversation — clears local state and purges backend agent.
+  Future<void> startNewSession() async {
     _currentSessionId = null;
     _offlineStep = 0;
+    await resetSession();
   }
 
   Map<String, String> get _headers {
@@ -72,12 +96,11 @@ class ChatService {
 
   /// Send a message and get the Guru's reply.
   /// Returns (replyText, isRoadmapReady, roadmapJson, navigateToRoadmap)
-  Future<(String, bool, Map<String, dynamic>?, bool, List<String>?)> sendMessage(String message) async {
+  Future<(String, bool, Map<String, dynamic>?, bool, List<String>?, List<ChatResource>?)> sendMessage(String message) async {
     try {
       final body = <String, dynamic>{
         'message': message,
         'domain': domain,
-        'user_id': AuthService.userId ?? 'demo-user',
       };
       if (_currentSessionId != null) {
         body['session_id'] = _currentSessionId;
@@ -87,19 +110,25 @@ class ChatService {
         Uri.parse('$_baseUrl/api/chat/send'),
         headers: _headers,
         body: jsonEncode(body),
-      ).timeout(Duration(seconds: 15));
+      ).timeout(const Duration(seconds: 90));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         _currentSessionId = data['session_id'] as String?;
         final rawOptions = data['options'] as List<dynamic>?;
         final options = rawOptions?.map((o) => o.toString()).toList();
+        final rawResources = data['resources'] as List<dynamic>?;
+        final resources = rawResources
+            ?.whereType<Map>()
+            .map((r) => ChatResource.fromJson(Map<String, dynamic>.from(r)))
+            .toList();
         return (
           data['reply'] as String,
           data['is_roadmap_ready'] as bool? ?? false,
           data['roadmap'] as Map<String, dynamic>?,
           data['navigate_to_roadmap'] as bool? ?? false,
           options,
+          resources,
         );
       }
     } catch (e) {
@@ -164,44 +193,53 @@ class ChatService {
     _currentSessionId = null;
     try {
       await http.post(
-        Uri.parse('$_baseUrl/api/chat/reset/${AuthService.userId}'),
+        Uri.parse('$_baseUrl/api/chat/reset'),
         headers: _headers,
       ).timeout(Duration(seconds: 5));
     } catch (_) {}
   }
 
   /// Offline canned responses for demo when backend isn't running.
-  (String, bool, Map<String, dynamic>?, bool, List<String>?) _offlineResponse(String message) {
+  (String, bool, Map<String, dynamic>?, bool, List<String>?, List<ChatResource>?) _offlineResponse(String message) {
+    // Mid-conversation failure (session was active) — show retry instead of re-greeting.
+    if (_currentSessionId != null) {
+      return (
+        "I'm taking longer than expected — please send your message again.",
+        false, null, false, null, null,
+      );
+    }
+
     _offlineStep++;
 
     switch (_offlineStep) {
       case 1:
         return (
-          "Welcome! I'm your Eklavya Guru 🧠\n\n"
-          "What skill or goal do you want to master?",
-          false, null, false, null,
+          "Welcome! I'm your Eklavya Guru 🧠\n\nWhat skill or goal do you want to master?",
+          false, null, false, null, null,
         );
       case 2:
         return (
           "Nice! What's your experience level?",
           false, null, false,
           ["Beginner", "Intermediate", "Advanced"],
+          null,
         );
       case 3:
         return (
           "How much time can you commit per day?",
           false, null, false,
           ["30 min/day", "1 hr/day", "2+ hrs/day"],
+          null,
         );
       default:
         return (
           "🎉 Your roadmap is ready!",
-          true, _demoRoadmap(), false, null,
+          true, _demoRoadmap(), false, null, _demoResources(),
         );
     }
   }
 
-  Map<String, dynamic> _demoRoadmap() => {
+      Map<String, dynamic> _demoRoadmap() => {
     'title': 'Master Deep Learning',
     'domain': 'learning',
     'estimated_weeks': 12,
@@ -214,4 +252,9 @@ class ChatService {
       {'title': 'Capstone Project', 'order': 6, 'tasks_count': 4},
     ],
   };
-}
+      List<ChatResource> _demoResources() => [
+        ChatResource(title: 'Deep Learning Book', url: 'https://www.deeplearningbook.org/'),
+        ChatResource(title: 'PyTorch Tutorials', url: 'https://pytorch.org/tutorials/'),
+      ];
+
+    }

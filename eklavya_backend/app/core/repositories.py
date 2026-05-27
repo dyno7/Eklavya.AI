@@ -398,21 +398,22 @@ async def get_all_tasks_for_user(
     db: AsyncSession,
     user_id: uuid.UUID,
 ) -> tuple[int, int]:
-    """Return (total_tasks, completed_tasks) counts for user."""
+    """Return (total_tasks, completed_tasks) counts for user — single query."""
+    from sqlalchemy import case
     stmt = (
-        select(func.count(Task.id))
+        select(
+            func.count(Task.id).label("total"),
+            func.sum(
+                case((Task.status == TaskStatus.COMPLETED, 1), else_=0)
+            ).label("completed"),
+        )
         .join(Milestone, Task.milestone_id == Milestone.id)
         .join(Goal, Milestone.goal_id == Goal.id)
         .where(Goal.user_id == user_id)
     )
-    total_result = await db.execute(stmt)
-    total = total_result.scalar_one()
-
-    completed_stmt = stmt.where(Task.status == TaskStatus.COMPLETED)
-    completed_result = await db.execute(completed_stmt)
-    completed = completed_result.scalar_one()
-
-    return total, completed
+    result = await db.execute(stmt)
+    row = result.one()
+    return int(row.total or 0), int(row.completed or 0)
 
 
 # ─── Chat Memory ────────────────────────────────────────────
@@ -457,48 +458,61 @@ async def get_chat_sessions(
     user_id: uuid.UUID,
     limit: int = 30,
 ) -> list[dict]:
-    """Return list of chat sessions with first user message as title, ordered newest first."""
-    from sqlalchemy import distinct
+    """
+    Return list of chat sessions with first user message as title.
+    Single query using ROW_NUMBER() window function — eliminates N+1.
+    """
+    from sqlalchemy import Integer, text
+    from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
-    # Get distinct session_ids ordered by most recent message
-    stmt = (
-        select(
-            ChatMemory.session_id,
-            func.min(ChatMemory.created_at).label("started_at"),
-            func.max(ChatMemory.created_at).label("last_at"),
-            func.count(ChatMemory.id).label("message_count"),
+    # One query: aggregate session stats + pull first user message via ROW_NUMBER
+    sql = text("""
+        WITH session_stats AS (
+            SELECT
+                session_id,
+                MIN(created_at)                          AS started_at,
+                MAX(created_at)                          AS last_at,
+                COUNT(*)                                 AS message_count
+            FROM chat_memories
+            WHERE user_id = :user_id
+            GROUP BY session_id
+            ORDER BY MAX(created_at) DESC
+            LIMIT :lim
+        ),
+        first_user_msgs AS (
+            SELECT
+                cm.session_id,
+                cm.content,
+                ROW_NUMBER() OVER (PARTITION BY cm.session_id ORDER BY cm.created_at ASC) AS rn
+            FROM chat_memories cm
+            JOIN session_stats ss ON cm.session_id = ss.session_id
+            WHERE cm.role = 'user'
         )
-        .where(ChatMemory.user_id == user_id)
-        .group_by(ChatMemory.session_id)
-        .order_by(func.max(ChatMemory.created_at).desc())
-        .limit(limit)
-    )
-    result = await db.execute(stmt)
-    sessions = result.all()
+        SELECT
+            ss.session_id,
+            ss.started_at,
+            ss.last_at,
+            ss.message_count,
+            COALESCE(fm.content, 'New conversation') AS first_message
+        FROM session_stats ss
+        LEFT JOIN first_user_msgs fm
+            ON fm.session_id = ss.session_id AND fm.rn = 1
+        ORDER BY ss.last_at DESC
+    """)
 
-    session_list = []
-    for row in sessions:
-        # Get the first user message as the session title
-        first_msg_stmt = (
-            select(ChatMemory.content)
-            .where(ChatMemory.session_id == row.session_id)
-            .where(ChatMemory.role == "user")
-            .order_by(ChatMemory.created_at.asc())
-            .limit(1)
-        )
-        first_msg_result = await db.execute(first_msg_stmt)
-        first_msg = first_msg_result.scalar_one_or_none()
+    result = await db.execute(sql, {"user_id": str(user_id), "lim": limit})
+    rows = result.mappings().all()
 
-        title = (first_msg or "New conversation")[:80]
-        session_list.append({
-            "session_id": str(row.session_id),
-            "title": title,
-            "started_at": row.started_at.isoformat() if row.started_at else None,
-            "last_message_at": row.last_at.isoformat() if row.last_at else None,
-            "message_count": row.message_count,
-        })
-
-    return session_list
+    return [
+        {
+            "session_id":      str(row["session_id"]),
+            "title":           (row["first_message"] or "New conversation")[:80],
+            "started_at":      row["started_at"].isoformat() if row["started_at"] else None,
+            "last_message_at": row["last_at"].isoformat() if row["last_at"] else None,
+            "message_count":   row["message_count"],
+        }
+        for row in rows
+    ]
 
 
 async def get_session_messages(

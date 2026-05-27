@@ -3,6 +3,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lottie/lottie.dart';
 
+import '../../core/services/chat_seed_service.dart';
 import '../../core/services/chat_service.dart';
 import '../../core/services/roadmap_sync_service.dart';
 import '../../core/theme/app_colors.dart';
@@ -34,6 +35,17 @@ class _ChatTabState extends State<ChatTab> {
     super.initState();
     _addGreeting();
     _loadSessions();
+    ChatSeedService.pending.addListener(_handleSeedMessage);
+    // Handle a seed that was set before this widget was first built
+    WidgetsBinding.instance.addPostFrameCallback((_) => _handleSeedMessage());
+  }
+
+  void _handleSeedMessage() {
+    final msg = ChatSeedService.pending.value;
+    if (msg != null && mounted) {
+      ChatSeedService.consume();
+      _sendMessage(msg);
+    }
   }
 
   void _addGreeting() {
@@ -54,8 +66,9 @@ class _ChatTabState extends State<ChatTab> {
     }
   }
 
-  void _startNewChat() {
-    _chatService.startNewSession();
+  Future<void> _startNewChat() async {
+    await _chatService.startNewSession();
+    if (!mounted) return;
     setState(() {
       _messages.clear();
       _roadmapReady = false;
@@ -86,6 +99,7 @@ class _ChatTabState extends State<ChatTab> {
 
   @override
   void dispose() {
+    ChatSeedService.pending.removeListener(_handleSeedMessage);
     _controller.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -104,11 +118,11 @@ class _ChatTabState extends State<ChatTab> {
 
     await Future.delayed(Duration(milliseconds: 400));
 
-    final (reply, isReady, roadmap, navigateToRoadmap, options) = await _chatService.sendMessage(text);
+    final (reply, isReady, roadmap, navigateToRoadmap, options, resources) = await _chatService.sendMessage(text);
 
     setState(() {
       _isTyping = false;
-      _messages.add(ChatMessage(text: reply, isUser: false, options: options));
+      _messages.add(ChatMessage(text: reply, isUser: false, options: options, resources: resources));
       if (isReady) {
         _roadmapReady = true;
         _roadmap = roadmap;
@@ -123,7 +137,7 @@ class _ChatTabState extends State<ChatTab> {
     _loadSessions();
 
     if (navigateToRoadmap || isReady) {
-      context.go('/goals');
+      if (mounted) context.go('/goals');
     }
   }
 
@@ -190,8 +204,9 @@ class _ChatTabState extends State<ChatTab> {
                   ),
                   // New Chat button
                   GestureDetector(
-                    onTap: () {
-                      _chatService.startNewSession();
+                    onTap: () async {
+                      await _chatService.startNewSession();
+                      if (!mounted) return;
                       setState(() {
                         _messages.clear();
                         _roadmapReady = false;

@@ -125,22 +125,17 @@ async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(_bearer_scheme),
 ) -> CurrentUser:
     """Decode Supabase JWT and return normalized user context."""
-    settings = get_settings()
     token = credentials.credentials
 
     try:
         payload = await _decode_supabase_token(token)
     except JWTError as exc:
-        if settings.ENVIRONMENT == "development":
-            logger.warning("JWT verification failed in development (%s). Falling back to unverified claims.", exc)
-            payload = jwt.get_unverified_claims(token)
-        else:
-            logger.error("JWT decode failed: %s", exc)
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail=f"Invalid or expired token: {str(exc)}",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+        logger.error("JWT decode failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     user_id = payload.get("sub")
     if user_id is None:

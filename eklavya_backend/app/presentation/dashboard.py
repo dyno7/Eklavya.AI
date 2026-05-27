@@ -6,6 +6,8 @@ Endpoints:
 - POST /api/v1/dashboard/claim-task/{task_id} — Complete a task and earn XP
 """
 
+import asyncio
+import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -16,7 +18,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import CurrentUser, get_current_user, get_current_user_id
 from app.core.database import get_db
 from app.core import repositories as repo
+from app.core.cache import DashboardCache
 from app.domain.enums import GoalStatus, MilestoneStatus, TaskStatus
+from app.domain.models import RewardSignalLog
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/dashboard", tags=["Dashboard"])
 
@@ -84,6 +90,13 @@ async def get_dashboard_summary(
 ):
     """Get unified dashboard data: user stats, active goal, milestone, tasks."""
     current_user_id = current_user.id
+    cache_key = str(current_user_id)
+
+    # ── Cache hit: serve from memory (30s TTL) ────────────────────────────────
+    cached = DashboardCache.get(cache_key)
+    if cached is not None:
+        return cached
+
     # 1. Get user profile
     user = await repo.get_user_profile(db, current_user_id)
     if user is None:
@@ -153,12 +166,14 @@ async def get_dashboard_summary(
         if t.status in (TaskStatus.PENDING, TaskStatus.IN_PROGRESS)
     ][:5]
 
-    return DashboardResponse(
+    response = DashboardResponse(
         user=user_stats,
         active_goal=goal_summary,
         current_milestone=milestone_summary,
         pending_tasks=pending,
     )
+    DashboardCache.set(cache_key, response)
+    return response
 
 
 @router.post("/claim-task/{task_id}", response_model=ClaimTaskResponse)
@@ -169,50 +184,59 @@ async def claim_task(
 ):
     """Mark a task as completed and award XP to the user."""
     current_user_id = current_user.id
-    # 1. Get task
-    task = await repo.get_task_by_id(db, task_id)
+
+    # ── Invalidate dashboard cache so next load is fresh ──────────────────────
+    DashboardCache.invalidate(str(current_user_id))
+
+    # 1 + 2. Fetch task and previous completion timestamp in parallel
+    task, previous_completion = await asyncio.gather(
+        repo.get_task_by_id(db, task_id),
+        repo.get_latest_task_completion_for_user(db, current_user_id),
+    )
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
-
     if task.status == TaskStatus.COMPLETED:
         raise HTTPException(status_code=400, detail="Task already completed")
 
-    # 2. Capture previous completion point for streak math.
-    previous_completion = await repo.get_latest_task_completion_for_user(db, current_user_id)
-
-    # 3. Capture FK before ORM state is expired (prevents MissingGreenlet).
+    # Capture attributes before ORM state is expired (prevents MissingGreenlet
+    # on async lazy-loads after expire_all()).
     task_milestone_id = task.milestone_id
-
-    # 4. Complete the task
+    task_xp_reward = task.xp_reward
     await repo.update_task_status(db, task_id, TaskStatus.COMPLETED)
 
     # 5. Expire cached ORM state so subsequent queries fetch fresh rows.
     db.expire_all()
 
     # 6. Advance milestone / goal state when all nested tasks are complete.
-    milestone = await repo.get_milestone_by_id(db, task_milestone_id)
     bonus_xp_from_milestone = 0
     bonus_xp_from_goal = 0
+    try:
+        milestone = await repo.get_milestone_by_id(db, task_milestone_id)
+        if milestone:
+            milestone_tasks = await repo.get_tasks_for_milestone(db, milestone.id)
+            if milestone_tasks and all(t.status == TaskStatus.COMPLETED for t in milestone_tasks):
+                await repo.update_milestone_status(db, milestone.id, MilestoneStatus.COMPLETED)
+                bonus_xp_from_milestone = 50
 
-    if milestone:
-        milestone_tasks = await repo.get_tasks_for_milestone(db, milestone.id)
-        if milestone_tasks and all(t.status == TaskStatus.COMPLETED for t in milestone_tasks):
-            await repo.update_milestone_status(db, milestone.id, MilestoneStatus.COMPLETED)
-            bonus_xp_from_milestone = 50
+                milestones = await repo.get_milestones_for_goal(db, milestone.goal_id)
+                remaining = [m for m in milestones if m.status != MilestoneStatus.COMPLETED]
+                if remaining:
+                    next_milestone = sorted(remaining, key=lambda item: item.order_index)[0]
+                    if next_milestone.status == MilestoneStatus.LOCKED:
+                        await repo.update_milestone_status(db, next_milestone.id, MilestoneStatus.ACTIVE)
 
-            milestones = await repo.get_milestones_for_goal(db, milestone.goal_id)
-            remaining = [m for m in milestones if m.status != MilestoneStatus.COMPLETED]
-            if remaining:
-                next_milestone = sorted(remaining, key=lambda item: item.order_index)[0]
-                if next_milestone.status == MilestoneStatus.LOCKED:
-                    await repo.update_milestone_status(db, next_milestone.id, MilestoneStatus.ACTIVE)
-
-            goal = await repo.get_goal_by_id(db, milestone.goal_id)
-            if goal:
-                refreshed = await repo.get_milestones_for_goal(db, goal.id)
-                if refreshed and all(m.status == MilestoneStatus.COMPLETED for m in refreshed):
-                    await repo.update_goal(db, goal.id, status=GoalStatus.COMPLETED)
-                    bonus_xp_from_goal = 200
+                goal = await repo.get_goal_by_id(db, milestone.goal_id)
+                if goal:
+                    refreshed = await repo.get_milestones_for_goal(db, goal.id)
+                    if refreshed and all(m.status == MilestoneStatus.COMPLETED for m in refreshed):
+                        await repo.update_goal(db, goal.id, status=GoalStatus.COMPLETED)
+                        bonus_xp_from_goal = 200
+    except Exception as e:
+        logger.error("Milestone/goal advancement failed (task already completed in DB): %s", e)
+        try:
+            await db.rollback()
+        except Exception:
+            pass
 
     # 6. Award XP, update streak, check level and badges.
     user = await repo.get_user_profile(db, current_user_id)
@@ -231,11 +255,11 @@ async def claim_task(
             multiplier = 1.5
         elif streak >= 3:
             multiplier = 1.2
-            
-        streak_bonus = int(task.xp_reward * (multiplier - 1.0))
+
+        streak_bonus = int(task_xp_reward * (multiplier - 1.0))
         bonus_xp_total = streak_bonus + bonus_xp_from_milestone + bonus_xp_from_goal
-        
-        user.total_xp = old_xp + task.xp_reward + bonus_xp_total
+
+        user.total_xp = old_xp + task_xp_reward + bonus_xp_total
         new_level = user.total_xp // 100
         level_up = new_level > old_level
 
@@ -250,39 +274,67 @@ async def claim_task(
         else:
             user.current_streak = 1
         user.updated_at = datetime.now(timezone.utc)
-        await db.commit()
-        await db.refresh(user)
+        try:
+            await db.commit()
+            await db.refresh(user)
+        except Exception as e:
+            logger.error("Failed to commit user XP/streak update: %s", e)
+            try:
+                await db.rollback()
+            except Exception:
+                pass
 
-        # 7. Evaluate badge triggers
-        if previous_completion is None:
-            awarded = await repo.award_badge_if_not_earned(db, current_user_id, "First Steps")
-            if awarded: badges_awarded.append(awarded)
-            
-        if user.total_xp >= 100:
-            awarded = await repo.award_badge_if_not_earned(db, current_user_id, "Novice")
-            if awarded: badges_awarded.append(awarded)
-            
-        if user.total_xp >= 500:
-            awarded = await repo.award_badge_if_not_earned(db, current_user_id, "Centurion")
-            if awarded: badges_awarded.append(awarded)
-            
-        if user.current_streak >= 7:
-            awarded = await repo.award_badge_if_not_earned(db, current_user_id, "Consistency")
-            if awarded: badges_awarded.append(awarded)
-            
-        if bonus_xp_from_milestone > 0:
-            awarded = await repo.award_badge_if_not_earned(db, current_user_id, "Milestone Master")
-            if awarded: badges_awarded.append(awarded)
-            
-        if bonus_xp_from_goal > 0:
-            awarded = await repo.award_badge_if_not_earned(db, current_user_id, "Goal Crusher")
-            if awarded: badges_awarded.append(awarded)
+        # Log RL reward signal (optional — reward_signal_logs may not exist
+        # if migration 002 hasn't been run yet; failure must not break task completion)
+        try:
+            db.add(RewardSignalLog(
+                user_id=current_user_id,
+                action_type="task_complete",
+                reward_value=1.0,
+            ))
+            await db.commit()
+        except Exception as e:
+            logger.warning("RewardSignalLog insert skipped: %s", e)
+            try:
+                await db.rollback()
+            except Exception:
+                pass
+
+        # 7. Evaluate badge triggers — optional, must not fail the request
+        try:
+            badge_checks = []
+            if previous_completion is None:
+                badge_checks.append(repo.award_badge_if_not_earned(db, current_user_id, "First Steps"))
+            if user.total_xp >= 100:
+                badge_checks.append(repo.award_badge_if_not_earned(db, current_user_id, "Novice"))
+            if user.total_xp >= 500:
+                badge_checks.append(repo.award_badge_if_not_earned(db, current_user_id, "Centurion"))
+            if user.current_streak >= 7:
+                badge_checks.append(repo.award_badge_if_not_earned(db, current_user_id, "Consistency"))
+            if bonus_xp_from_milestone > 0:
+                badge_checks.append(repo.award_badge_if_not_earned(db, current_user_id, "Milestone Master"))
+            if bonus_xp_from_goal > 0:
+                badge_checks.append(repo.award_badge_if_not_earned(db, current_user_id, "Goal Crusher"))
+
+            if badge_checks:
+                results = await asyncio.gather(*badge_checks, return_exceptions=True)
+                badges_awarded = [b for b in results if isinstance(b, str)]
+        except Exception as e:
+            logger.warning("Badge evaluation skipped: %s", e)
+            try:
+                await db.rollback()
+            except Exception:
+                pass
 
     return ClaimTaskResponse(
         task_id=str(task_id),
-        xp_earned=task.xp_reward,
+        xp_earned=task_xp_reward,
         new_total_xp=user.total_xp if user else 0,
-        message=f"+{task.xp_reward + bonus_xp_total} XP earned!" if bonus_xp_total else f"+{task.xp_reward} XP earned!",
+        message=(
+            f"+{task_xp_reward + bonus_xp_total} XP earned!"
+            if bonus_xp_total
+            else f"+{task_xp_reward} XP earned!"
+        ),
         bonus_xp=bonus_xp_total,
         level_up=level_up,
         new_level=new_level,

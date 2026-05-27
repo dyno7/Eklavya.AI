@@ -153,5 +153,5 @@ class GdiService:
                 await db.commit()
                 logger.info("Midnight GDI Sweep Completed Successfully.")
             except Exception as e:
-                logger.error(f"Failed GDI Sweep: {e}")
+                logger.error("Failed GDI Sweep: %s", e)
                 await db.rollback()

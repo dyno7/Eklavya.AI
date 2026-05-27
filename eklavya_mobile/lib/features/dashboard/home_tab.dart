@@ -3,6 +3,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lottie/lottie.dart';
 
+import '../../core/services/chat_seed_service.dart';
 import '../../core/services/dashboard_service.dart';
 import '../../core/services/notification_service.dart';
 import '../../core/services/coach_service.dart';
@@ -62,31 +63,39 @@ class _HomeTabState extends State<HomeTab> {
   }
 
   Future<void> _onTaskComplete(TaskSummary task) async {
-    final result = await _dashboardService.completeTask(task.id);
+    final outcome = await _dashboardService.completeTask(task.id);
     if (!mounted) return;
-    if (result != null) {
-      _showXpToast(context, result.xpEarned, result.bonusXp);
-      
-      if (result.levelUp) {
-        _showLevelUpModal(context, result.newLevel);
+    if (outcome is TaskClaimResult) {
+      _showXpToast(context, outcome.xpEarned, outcome.bonusXp);
+
+      if (outcome.levelUp) {
+        _showLevelUpModal(context, outcome.newLevel);
       }
-      
-      if (result.badgesAwarded.isNotEmpty) {
-        Future.delayed(Duration(milliseconds: 600), () {
+
+      if (outcome.badgesAwarded.isNotEmpty) {
+        Future.delayed(const Duration(milliseconds: 600), () {
           if (!mounted) return;
-          for (final badge in result.badgesAwarded) {
-             ScaffoldMessenger.of(context).showSnackBar(
-               SnackBar(
-                 content: Text('🏅 Badge Unlocked: $badge!'),
-                 backgroundColor: context.colors.accent,
-                 duration: Duration(seconds: 2),
-               ),
-             );
+          for (final badge in outcome.badgesAwarded) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('🏅 Badge Unlocked: $badge!'),
+                backgroundColor: context.colors.accent,
+                duration: const Duration(seconds: 2),
+              ),
+            );
           }
         });
       }
+    } else if (outcome is TaskClaimError) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Couldn't complete task: ${outcome.message}"),
+          backgroundColor: context.colors.error,
+          duration: const Duration(seconds: 4),
+        ),
+      );
     }
-    _fetchDashboard(); // Refresh
+    _fetchDashboard(); // Refresh either way
   }
 
   void _showXpToast(BuildContext ctx, int xp, int bonusXp) {
@@ -260,53 +269,132 @@ class _HomeTabState extends State<HomeTab> {
     return 'Good Night,';
   }
 
+  // Small pill shown inline with the greeting — only for ENGAGED state.
   Widget _buildCoachIndicator() {
-    if (_coachStatus == null) return const SizedBox.shrink();
-    Color bgColor = context.colors.success;
-    IconData icon = Icons.trending_up_rounded;
-    if (_coachStatus!.state == 'WAVERING') {
-      bgColor = context.colors.warning;
-      icon = Icons.warning_amber_rounded;
-    } else if (_coachStatus!.state == 'SILENT_RECESS') {
-      bgColor = context.colors.error;
-      icon = Icons.snooze_rounded;
+    if (_coachStatus == null || _coachStatus!.state != 'ENGAGED') {
+      return const SizedBox.shrink();
     }
-    
     return Container(
       margin: const EdgeInsets.only(top: AppSpacing.sm),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: bgColor.withAlpha(40),
-        border: Border.all(color: bgColor.withAlpha(100)),
+        color: context.colors.success.withAlpha(40),
+        border: Border.all(color: context.colors.success.withAlpha(100)),
         borderRadius: AppRadii.pill,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 14, color: bgColor),
+          Icon(Icons.trending_up_rounded, size: 14, color: context.colors.success),
           const SizedBox(width: 4),
           Text(
-            _coachStatus!.state,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: bgColor,
-            ),
-          )
+            'On track',
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: context.colors.success),
+          ),
         ],
-      )
+      ),
     );
   }
 
-  IconData _getTaskIcon(String type) {
-    switch (type) {
-      case 'watch': return Icons.play_circle_fill_rounded;
-      case 'practice': return Icons.code_rounded;
-      case 'read': return Icons.menu_book_rounded;
-      case 'quiz': return Icons.quiz_rounded;
-      default: return Icons.star_rounded;
-    }
+  // Full nudge card shown below the priority goal when coach detects drift.
+  Widget _buildCoachNudgeCard() {
+    final status = _coachStatus;
+    if (status == null) return const SizedBox.shrink();
+    final isWavering = status.state == 'WAVERING';
+    final isSilent = status.state == 'SILENT_RECESS';
+    if (!isWavering && !isSilent) return const SizedBox.shrink();
+
+    final theme = Theme.of(context);
+    final Color accent = isSilent ? context.colors.error : context.colors.warning;
+    final IconData icon = isSilent ? Icons.snooze_rounded : Icons.warning_amber_rounded;
+    final String headline = isSilent
+        ? "You've gone quiet — let's fix that"
+        : "Your momentum is slipping";
+    final String body = isSilent
+        ? "It looks like you haven't completed a task in a while. Your coach has noticed. A small win today puts you back on track."
+        : "You've been opening the app but not completing tasks. Chat with your Guru to simplify your next steps.";
+
+    final seedMessage = isSilent
+        ? "I haven't been active lately and want to get back on track. What should I focus on first?"
+        : "My momentum is slipping. Can you help me simplify my next steps and get moving again?";
+
+    return GestureDetector(
+      onTap: () {
+        ChatSeedService.seed(seedMessage);
+        context.go('/chat');
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: AppSpacing.lg),
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        decoration: BoxDecoration(
+          color: accent.withAlpha(18),
+          borderRadius: AppRadii.lg,
+          border: Border.all(color: accent.withAlpha(80)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: accent.withAlpha(40),
+              ),
+              child: Icon(icon, color: accent, size: 22),
+            ),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    headline,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: accent,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    body,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: context.colors.textSecondary,
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: accent,
+                      borderRadius: AppRadii.pill,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.chat_bubble_outline_rounded, size: 14, color: Colors.white),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Get back on track',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    ).animate().fadeIn(duration: 400.ms).slideY(begin: 0.1, end: 0, duration: 400.ms);
   }
+
 
   IconData _getDomainIcon(String domain) {
     switch (domain) {
@@ -554,7 +642,10 @@ class _HomeTabState extends State<HomeTab> {
               ).animate().fadeIn().slideY(begin: 0.1, end: 0, duration: 500.ms),
               
               SizedBox(height: AppSpacing.lg),
-              
+
+              // ─── Coach Nudge Card (drift detected) ───
+              _buildCoachNudgeCard(),
+
               // ─── Streak Card ───
               GlassCard(
                 padding: EdgeInsets.all(AppSpacing.lg),
@@ -873,8 +964,8 @@ class _ResourceCard extends StatelessWidget {
 // ─── Task Card ───
 class _TaskCard extends StatefulWidget {
   final TaskSummary task;
-  final VoidCallback onComplete;
-  
+  final Future<void> Function() onComplete;
+
   const _TaskCard({required this.task, required this.onComplete});
 
   @override
@@ -1002,11 +1093,15 @@ class _TaskCardState extends State<_TaskCard> {
               onTap: () async {
                 if (isCompleted || _isChecking) return;
                 setState(() => _isChecking = true);
-                widget.onComplete();
+                try {
+                  await widget.onComplete();
+                } finally {
+                  if (mounted) setState(() => _isChecking = false);
+                }
               },
               child: AnimatedScale(
                 scale: _isChecking ? 1.3 : 1.0,
-                duration: Duration(milliseconds: 150),
+                duration: const Duration(milliseconds: 150),
                 curve: Curves.fastOutSlowIn,
                 child: Checkbox(
                   value: isCompleted,
@@ -1014,12 +1109,18 @@ class _TaskCardState extends State<_TaskCard> {
                   checkColor: context.colors.background,
                   side: BorderSide(color: context.colors.textSecondary, width: 2),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                  onChanged: isCompleted ? null : (val) {
-                    if (val == true && !_isChecking) {
-                      setState(() => _isChecking = true);
-                      widget.onComplete();
-                    }
-                  },
+                  onChanged: isCompleted
+                      ? null
+                      : (val) async {
+                          if (val == true && !_isChecking) {
+                            setState(() => _isChecking = true);
+                            try {
+                              await widget.onComplete();
+                            } finally {
+                              if (mounted) setState(() => _isChecking = false);
+                            }
+                          }
+                        },
                 ),
               ),
             ),

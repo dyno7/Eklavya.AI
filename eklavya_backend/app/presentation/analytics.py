@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import CurrentUser, get_current_user
 from app.core.database import get_db
 from app.core import repositories as repo
+from app.core.cache import AnalyticsCache
 
 router = APIRouter(prefix="/api/v1/analytics", tags=["Analytics"])
 
@@ -38,6 +39,12 @@ async def get_analytics_summary(
 ):
     """Return real usage analytics for the authenticated user."""
     user_id = current_user.id
+    cache_key = str(user_id)
+
+    cached = AnalyticsCache.get(cache_key)
+    if cached is not None:
+        return cached
+
     now = datetime.now(timezone.utc)
 
     # 1. Get task completions for the last 30 days
@@ -60,17 +67,19 @@ async def get_analytics_summary(
         day = (now - timedelta(days=i)).strftime("%Y-%m-%d")
         weekly.append(daily_xp.get(day, 0))
 
-    # 3. Task counts
+    # 3. Task counts — single query
     total_tasks, completed_tasks = await repo.get_all_tasks_for_user(db, user_id)
     completion_rate = completed_tasks / total_tasks if total_tasks > 0 else 0.0
 
-    return AnalyticsSummary(
+    result = AnalyticsSummary(
         daily_xp=weekly,
         completion_rate=round(completion_rate, 3),
         active_days_last_30=len(active_dates),
         total_tasks=total_tasks,
         completed_tasks=completed_tasks,
     )
+    AnalyticsCache.set(cache_key, result)
+    return result
 
 @router.post("/session_start")
 async def log_session_start(

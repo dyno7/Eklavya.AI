@@ -38,6 +38,10 @@ def get_engine() -> AsyncEngine:
             settings.DATABASE_URL,
             echo=settings.ENVIRONMENT == "development",
             pool_pre_ping=True,
+            pool_size=10,          # max persistent connections
+            max_overflow=20,       # extra connections under burst
+            pool_timeout=30,       # wait max 30s for a connection before raising
+            pool_recycle=1800,     # recycle connections every 30 min (avoids Supabase idle timeout)
             connect_args={"ssl": "require", "statement_cache_size": 0},
         )
     return _engine

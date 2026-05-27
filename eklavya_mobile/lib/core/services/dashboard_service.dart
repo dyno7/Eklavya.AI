@@ -9,7 +9,13 @@ import '../services/roadmap_sync_service.dart';
 
 // ─── Models ────────────────────────────────────────
 
-class TaskClaimResult {
+/// Outcome of attempting to claim a task. Either a TaskClaimResult (success)
+/// or a TaskClaimError (with status + message for the UI to display).
+sealed class TaskClaimOutcome {
+  const TaskClaimOutcome();
+}
+
+class TaskClaimResult extends TaskClaimOutcome {
   final int xpEarned;
   final int bonusXp;
   final int newTotalXp;
@@ -17,6 +23,12 @@ class TaskClaimResult {
   final int newLevel;
   final List<String> badgesAwarded;
   const TaskClaimResult({required this.xpEarned, required this.bonusXp, required this.newTotalXp, required this.levelUp, required this.newLevel, required this.badgesAwarded});
+}
+
+class TaskClaimError extends TaskClaimOutcome {
+  final int statusCode;
+  final String message;
+  const TaskClaimError({required this.statusCode, required this.message});
 }
 
 class UserStats {
@@ -203,13 +215,18 @@ class DashboardService {
   }
 
   /// Complete a task and earn XP.
-  /// Returns TaskClaimResult or null on failure.
-  Future<TaskClaimResult?> completeTask(String taskId) async {
+  /// Returns TaskClaimResult on success, or a TaskClaimError on failure
+  /// (so the UI can surface what actually went wrong).
+  Future<TaskClaimOutcome> completeTask(String taskId) async {
+    final url = '$_baseUrl/api/v1/dashboard/claim-task/$taskId';
+    debugPrint('[completeTask] POST $url');
     try {
       final response = await http.post(
-        Uri.parse('$_baseUrl/api/v1/dashboard/claim-task/$taskId'),
+        Uri.parse(url),
         headers: _headers,
-      ).timeout(Duration(seconds: 10));
+      ).timeout(const Duration(seconds: 15));
+
+      debugPrint('[completeTask] status=${response.statusCode} body=${response.body}');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -223,10 +240,23 @@ class DashboardService {
           badgesAwarded: (data['badges_awarded'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
         );
       }
-    } catch (_) {
-      // Offline — silently fail
+
+      // Non-200 — try to surface the backend's error detail
+      String? detail;
+      try {
+        final body = jsonDecode(response.body);
+        if (body is Map && body['detail'] != null) {
+          detail = body['detail'].toString();
+        }
+      } catch (_) {}
+      return TaskClaimError(
+        statusCode: response.statusCode,
+        message: detail ?? 'Server returned ${response.statusCode}',
+      );
+    } catch (e) {
+      debugPrint('[completeTask] EXCEPTION: $e');
+      return TaskClaimError(statusCode: 0, message: e.toString());
     }
-    return null;
   }
 
   /// Fetch real analytics data from backend.

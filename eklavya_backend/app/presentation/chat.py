@@ -21,6 +21,7 @@ from app.agents.guru_agent import GuruAgent
 from app.agents.roadmap_persistence import persist_roadmap
 from app.core.auth import CurrentUser, get_current_user, get_current_user_id
 from app.core.database import get_db
+from app.core.gdi_service import GdiService
 from app.core import repositories as repo
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
@@ -31,20 +32,29 @@ _sessions: dict[str, GuruAgent] = {}
 
 
 def _get_or_create_agent(
+    session_key: str,
     user_id: str,
     domain: str,
     roadmap_context: str | None = None,
     memory_context: str | None = None,
+    current_streak: int | None = None,
+    coach_state: str | None = None,
 ) -> GuruAgent:
-    """Get existing agent session or create a new one."""
-    if user_id not in _sessions:
-        _sessions[user_id] = GuruAgent(
+    """Get existing agent for a session or create a fresh one.
+
+    Keyed by session_id so each new conversation (new UUID) gets a clean agent.
+    This prevents old roadmap state from bleeding into new sessions.
+    """
+    if session_key not in _sessions:
+        _sessions[session_key] = GuruAgent(
             domain=domain,
             user_id=user_id,
             roadmap_context=roadmap_context,
             memory_context=memory_context,
+            current_streak=current_streak,
+            coach_state=coach_state,
         )
-    return _sessions[user_id]
+    return _sessions[session_key]
 
 
 # ─── Request / Response schemas ─────────────────────
@@ -53,7 +63,19 @@ class ChatSendRequest(BaseModel):
     message: str
     domain: str = "learning"
     session_id: str | None = None
-    user_id: str | None = None  # Deprecated
+
+    @classmethod
+    def __get_validators__(cls):
+        yield from super().__get_validators__()
+
+    def model_post_init(self, __context) -> None:
+        if len(self.message) > 5000:
+            raise ValueError("Message must be 5000 characters or fewer")
+        if not self.message.strip():
+            raise ValueError("Message cannot be empty")
+        allowed_domains = {"learning", "startup", "writing", "fitness", "custom"}
+        if self.domain not in allowed_domains:
+            raise ValueError(f"Domain must be one of: {allowed_domains}")
 
 
 class ChatSendResponse(BaseModel):
@@ -61,6 +83,7 @@ class ChatSendResponse(BaseModel):
     session_id: str
     is_roadmap_ready: bool = False
     roadmap: dict | None = None
+    resources: list[dict] | None = None
     goal_id: str | None = None
     navigate_to_roadmap: bool = False
     options: list[str] | None = None
@@ -91,6 +114,63 @@ class ChatSessionMessagesResponse(BaseModel):
     messages: list[dict]
 
 
+_RESOURCE_INTENT_KEYWORDS = frozenset([
+    "resource", "resources", "link", "links", "tutorial", "tutorials",
+    "watch", "read", "article", "video", "course", "learn from",
+    "where to learn", "recommend", "suggestion", "what should i",
+    "how do i learn", "study material", "reference", "documentation",
+])
+
+
+def _is_resource_request(message: str) -> bool:
+    """Return True when the user message is asking for learning resources."""
+    lower = message.lower()
+    return any(kw in lower for kw in _RESOURCE_INTENT_KEYWORDS)
+
+
+def _collect_resources(roadmap: dict | None, limit: int = 6) -> list[dict]:
+    """Flatten the roadmap's task resources into a short list for chat UI."""
+    if not roadmap:
+        return []
+
+    resources: list[dict] = []
+    for milestone in roadmap.get("milestones", []):
+        if not isinstance(milestone, dict):
+            continue
+        milestone_title = str(milestone.get("title", "Milestone"))
+        for task in milestone.get("tasks", []):
+            if not isinstance(task, dict):
+                continue
+            task_title = str(task.get("title", "Task"))
+            for resource in task.get("resources", []):
+                if not isinstance(resource, dict):
+                    continue
+                url = str(resource.get("url", "")).strip()
+                if not url:
+                    continue
+                resources.append({
+                    "title": str(resource.get("title", url)).strip() or url,
+                    "url": url,
+                    "task_title": task_title,
+                    "milestone_title": milestone_title,
+                })
+                if len(resources) >= limit:
+                    return resources
+
+    return resources
+
+
+async def _fetch_goal_resources(db: AsyncSession, user_id, limit: int = 6) -> list[dict]:
+    """Fetch stored resources from the user's active goal metadata."""
+    goals = await repo.get_goals_for_user(db, user_id)
+    active = [g for g in goals if g.status.value == "active"]
+    if not active:
+        return []
+    goal = active[0]
+    raw: list[dict] = (goal.metadata_ or {}).get("resources", [])
+    return [r for r in raw if isinstance(r, dict) and r.get("url")][:limit]
+
+
 # ─── Endpoints ──────────────────────────────────────
 
 @router.post("/send", response_model=ChatSendResponse)
@@ -111,43 +191,64 @@ async def send_message(
 
     roadmap_context = None
     memory_context = None
+    current_streak = 0
+    coach_state = None
     try:
+        user = await repo.get_user_profile(db, current_user_id)
+        if user is None:
+            user = await repo.upsert_user_profile(db, current_user_id, display_name=current_user.display_name)
+        current_streak = user.current_streak or 0
+
         goals = await repo.get_goals_for_user(db, current_user_id)
         active_goals = [g for g in goals if g.status.value == "active"]
         if active_goals:
             roadmap_context = f"Active Goal Title: {active_goals[0].title}\nDescription: {active_goals[0].description}"
+
+        gdi_state = await GdiService.calculate_current_gdi(db, current_user_id)
+        coach_state = f"{gdi_state['state']} ({gdi_state['intervention']})"
 
         # Load this session's messages as memory context
         session_memories = await repo.get_session_messages(db, current_user_id, session_id)
         if session_memories:
             memory_lines = [f"- {m.role}: {m.content}" for m in session_memories[-12:]]
             memory_context = "\n".join(memory_lines)
-        else:
-            memories = await repo.get_recent_chat_memories(db, current_user_id, limit=12)
-            if memories:
-                memory_lines = [f"- {m.role}: {m.content}" for m in memories]
-                memory_context = "\n".join(memory_lines)
     except Exception as e:
         logger.warning("Failed to load roadmap context: %s", e)
         await db.rollback()
 
-    agent = _get_or_create_agent(session_user_id, request.domain, roadmap_context, memory_context)
+    agent = _get_or_create_agent(
+        str(session_id),       # key by session — each new chat gets a fresh agent
+        session_user_id,
+        request.domain,
+        roadmap_context,
+        memory_context,
+        current_streak=current_streak,
+        coach_state=coach_state,
+    )
 
     reply, is_roadmap_ready, navigate_to_roadmap, options = await agent.chat(request.message)
 
     goal_id = None
+    persistence_failed = False
     if is_roadmap_ready and agent.roadmap:
         try:
-            user = await repo.get_user_profile(db, current_user_id)
-            if user is None:
-                await repo.upsert_user_profile(db, current_user_id, display_name=current_user.display_name)
             goal_id_uuid = await persist_roadmap(db, current_user_id, agent.roadmap)
             goal_id = str(goal_id_uuid)
-            logger.info(f"Roadmap persisted as goal {goal_id}")
+            logger.info("Roadmap persisted as goal %s", goal_id)
         except Exception as e:
-            logger.error(f"Skipped roadmap persistence: {e}")
+            logger.error("Roadmap persistence failed: %s", e)
             logger.error(traceback.format_exc())
             await db.rollback()
+            persistence_failed = True
+
+    # If persistence failed, tell the frontend the roadmap is NOT ready so the
+    # user doesn't get navigated to an empty Goals tab. Surface a clear message.
+    if persistence_failed:
+        is_roadmap_ready = False
+        reply = (
+            "I built your roadmap but couldn't save it just now — please try again "
+            "in a moment, or let me know if you'd like to tweak anything first."
+        )
 
     # Persist conversational memory with session_id
     try:
@@ -157,11 +258,24 @@ async def send_message(
         logger.warning("Failed to persist chat memory: %s", e)
         await db.rollback()
 
+    # Determine resources to return: roadmap-generated (on completion) or
+    # DB-stored (when user asks for resources mid-conversation).
+    response_resources: list[dict] | None = None
+    if is_roadmap_ready:
+        response_resources = _collect_resources(agent.roadmap) or None
+    elif _is_resource_request(request.message):
+        try:
+            db_resources = await _fetch_goal_resources(db, current_user_id)
+            response_resources = db_resources or None
+        except Exception as e:
+            logger.warning("Failed to fetch goal resources: %s", e)
+
     return ChatSendResponse(
         reply=reply,
         session_id=str(session_id),
         is_roadmap_ready=is_roadmap_ready,
         roadmap=agent.roadmap if is_roadmap_ready else None,
+        resources=response_resources,
         goal_id=goal_id,
         navigate_to_roadmap=navigate_to_roadmap,
         options=options,
@@ -199,12 +313,15 @@ async def load_session(
     )
 
 
-@router.get("/history/{user_id}", response_model=ChatHistoryResponse)
-async def get_history(user_id: str):
-    """Get conversation history for a user session."""
-    if user_id not in _sessions:
+@router.get("/history", response_model=ChatHistoryResponse)
+async def get_history(
+    current_user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Get conversation history for the authenticated user."""
+    user_key = str(current_user_id)
+    if user_key not in _sessions:
         return ChatHistoryResponse(messages=[])
-    return ChatHistoryResponse(messages=_sessions[user_id].get_history())
+    return ChatHistoryResponse(messages=_sessions[user_key].get_history())
 
 
 @router.get("/memory", response_model=ChatMemoryResponse)
@@ -225,22 +342,17 @@ async def get_memory(
     )
 
 
-@router.post("/reset/{user_id}")
-async def reset_session(user_id: str):
-    """Reset (clear) a user's conversation session."""
-    if user_id in _sessions:
-        _sessions[user_id].reset()
-        del _sessions[user_id]
-    return {"status": "ok", "message": f"Session for {user_id} has been reset"}
+@router.post("/reset")
+async def reset_session(
+    current_user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Reset (clear) all Guru sessions for the authenticated user."""
+    user_id_str = str(current_user_id)
+    # Sessions are now keyed by session_id UUID strings — scan and purge by user_id
+    to_delete = [k for k, agent in _sessions.items() if agent.user_id == user_id_str]
+    for k in to_delete:
+        del _sessions[k]
+    return {"status": "ok", "message": f"Cleared {len(to_delete)} session(s)"}
 
 
-@router.get("/debug")
-async def debug_status():
-    """Non-authenticated debug endpoint — shows whether Gemini API is live or demo."""
-    from app.core.config import get_settings
-    settings = get_settings()
-    return {
-        "gemini_key_set": bool(settings.GEMINI_API_KEY),
-        "gemini_key_preview": settings.GEMINI_API_KEY[:8] + "..." if settings.GEMINI_API_KEY else "NOT SET",
-        "environment": settings.ENVIRONMENT,
-    }
+# /debug endpoint REMOVED — it leaked Gemini API key prefix to unauthenticated callers.

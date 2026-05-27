@@ -18,7 +18,8 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
   static final _navItems = [
     const GlassNavItem(icon: Icons.home_rounded, label: 'Home'),
     const GlassNavItem(icon: Icons.flag_rounded, label: 'Goals'),
-    const GlassNavItem(icon: Icons.chat_bubble_rounded, label: 'Chat'),
+    const GlassNavItem(icon: Icons.auto_awesome_rounded, label: 'Guru'),
+    const GlassNavItem(icon: Icons.psychology_rounded, label: 'Coach'),
     const GlassNavItem(icon: Icons.bar_chart_rounded, label: 'Analytics'),
   ];
 

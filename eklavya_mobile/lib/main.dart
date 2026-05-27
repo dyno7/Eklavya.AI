@@ -30,17 +30,19 @@ String _normalizeSupabaseUrl(String rawUrl) {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Read from --dart-define (set in launch config or CLI)
-  // Fallback to the project defaults for convenience during dev.
-  const supabaseUrlRaw = String.fromEnvironment(
-    'SUPABASE_URL',
-    defaultValue: 'https://uhfydykjgbeqjwejtzip.supabase.co',
-  );
-  const supabaseAnonKey = String.fromEnvironment(
-    'SUPABASE_ANON_KEY',
-    defaultValue:
-        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVoZnlkeWtqZ2JlcWp3ZWp0emlwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ5NjczNDMsImV4cCI6MjA5MDU0MzM0M30.StiG0hh84qmQMpOySUOCBYfTOaTmW94BySktoNq8jzE',
-  );
+  // Read from --dart-define (set in launch config or CLI).
+  // No hardcoded defaults — credentials must be injected at build time.
+  // Example: flutter run --dart-define=SUPABASE_URL=https://xxx.supabase.co
+  //                      --dart-define=SUPABASE_ANON_KEY=eyJ...
+  const supabaseUrlRaw = String.fromEnvironment('SUPABASE_URL');
+  const supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
+
+  if (supabaseUrlRaw.isEmpty || supabaseAnonKey.isEmpty) {
+    throw StateError(
+      'Missing required --dart-define flags: SUPABASE_URL and SUPABASE_ANON_KEY. '
+      'Run with: flutter run --dart-define=SUPABASE_URL=... --dart-define=SUPABASE_ANON_KEY=...',
+    );
+  }
 
   final supabaseUrl = _normalizeSupabaseUrl(supabaseUrlRaw);
 

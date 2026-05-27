@@ -1,5 +1,0 @@
-Analyzing eklavya_mobile...                                     
-
-  error - The getter 'edit_document_rounded' isn't defined for the type 'Icons' - lib\features\goals\goal_roadmap_screen.dart:87:34 - undefined_getter
-   info - Unnecessary braces in a string interpolation - lib\features\goals\goal_roadmap_screen.dart:147:41 - unnecessary_brace_in_string_interps
-

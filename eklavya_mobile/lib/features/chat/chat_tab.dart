@@ -29,6 +29,7 @@ class _ChatTabState extends State<ChatTab> {
   Map<String, dynamic>? _roadmap;
   List<ChatSession> _sessions = [];
   bool _sessionsLoading = false;
+  bool _sessionsDirty = true; // reload only when drawer is opened
 
   @override
   void initState() {
@@ -55,13 +56,15 @@ class _ChatTabState extends State<ChatTab> {
     ));
   }
 
-  Future<void> _loadSessions() async {
+  Future<void> _loadSessions({bool force = false}) async {
+    if (!force && !_sessionsDirty) return;
     setState(() => _sessionsLoading = true);
     final sessions = await _chatService.getSessions();
     if (mounted) {
       setState(() {
         _sessions = sessions;
         _sessionsLoading = false;
+        _sessionsDirty = false;
       });
     }
   }
@@ -118,11 +121,11 @@ class _ChatTabState extends State<ChatTab> {
 
     await Future.delayed(Duration(milliseconds: 400));
 
-    final (reply, isReady, roadmap, navigateToRoadmap, options, resources) = await _chatService.sendMessage(text);
+    final (reply, isReady, roadmap, navigateToRoadmap, options, resources, tone) = await _chatService.sendMessage(text);
 
     setState(() {
       _isTyping = false;
-      _messages.add(ChatMessage(text: reply, isUser: false, options: options, resources: resources));
+      _messages.add(ChatMessage(text: reply, isUser: false, options: options, resources: resources, tone: tone));
       if (isReady) {
         _roadmapReady = true;
         _roadmap = roadmap;
@@ -134,7 +137,7 @@ class _ChatTabState extends State<ChatTab> {
     }
 
     _scrollToBottom();
-    _loadSessions();
+    _sessionsDirty = true; // refresh sidebar next time drawer opens
 
     if (navigateToRoadmap || isReady) {
       if (mounted) context.go('/goals');
@@ -170,7 +173,10 @@ class _ChatTabState extends State<ChatTab> {
                 children: [
                   // Hamburger menu for sessions drawer
                   Builder(builder: (ctx) => GestureDetector(
-                    onTap: () => Scaffold.of(ctx).openDrawer(),
+                    onTap: () {
+                      _loadSessions();
+                      Scaffold.of(ctx).openDrawer();
+                    },
                     child: Container(
                       width: 36, height: 36,
                       decoration: BoxDecoration(
@@ -481,17 +487,7 @@ class _ChatTabState extends State<ChatTab> {
           ),
         ),
         SizedBox(width: AppSpacing.sm),
-        GestureDetector(
-          onTap: _sendMessage,
-          child: Container(
-            width: 44, height: 44,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: context.colors.primaryGradient,
-            ),
-            child: Icon(Icons.arrow_upward_rounded, color: Colors.white, size: 22),
-          ),
-        ),
+        _AnimatedSendButton(onTap: _sendMessage),
       ],
     );
   }
@@ -530,6 +526,67 @@ class _ChatTabState extends State<ChatTab> {
           ),
         ).animate().fadeIn(delay: 500.ms).slideY(begin: 0.2, end: 0, duration: 400.ms),
       ],
+    );
+  }
+}
+
+/// Send button that springs (scale down on press, bounce back on release).
+class _AnimatedSendButton extends StatefulWidget {
+  final VoidCallback onTap;
+  const _AnimatedSendButton({required this.onTap});
+
+  @override
+  State<_AnimatedSendButton> createState() => _AnimatedSendButtonState();
+}
+
+class _AnimatedSendButtonState extends State<_AnimatedSendButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 80),
+    reverseDuration: const Duration(milliseconds: 300),
+    lowerBound: 0.0,
+    upperBound: 1.0,
+    value: 1.0,
+  );
+
+  late final Animation<double> _scale = CurvedAnimation(
+    parent: _ctrl,
+    curve: Curves.easeIn,
+    reverseCurve: Curves.elasticOut,
+  );
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _onTapDown(TapDownDetails _) => _ctrl.reverse(from: 0.82);
+  void _onTapUp(TapUpDetails _) {
+    _ctrl.forward();
+    widget.onTap();
+  }
+  void _onTapCancel() => _ctrl.forward();
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: _onTapDown,
+      onTapUp: _onTapUp,
+      onTapCancel: _onTapCancel,
+      child: ScaleTransition(
+        scale: _scale,
+        child: Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: context.colors.primaryGradient,
+          ),
+          child: const Icon(Icons.arrow_upward_rounded, color: Colors.white, size: 22),
+        ),
+      ),
     );
   }
 }

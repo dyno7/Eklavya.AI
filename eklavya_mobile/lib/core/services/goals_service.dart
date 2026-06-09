@@ -164,7 +164,7 @@ class TaskItem {
   });
 
   factory TaskItem.fromJson(Map<String, dynamic> json) {
-    final metadata = json['metadata'] as Map<String, dynamic>? ?? {};
+    final metadata = (json['metadata_'] ?? json['metadata']) as Map<String, dynamic>? ?? {};
     final rawResources = metadata['resources'] as List<dynamic>? ?? [];
     return TaskItem(
       id: json['id'] ?? '',
@@ -193,7 +193,7 @@ class MilestoneItem {
   });
 
   factory MilestoneItem.fromJson(Map<String, dynamic> json) {
-    final metadata = json['metadata'] as Map<String, dynamic>? ?? {};
+    final metadata = (json['metadata_'] ?? json['metadata']) as Map<String, dynamic>? ?? {};
     return MilestoneItem(
       id: json['id'] ?? '',
       title: json['title'] ?? '',

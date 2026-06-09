@@ -6,7 +6,6 @@ import '../widgets/gradient_background.dart';
 
 import '../../features/analytics/analytics_tab.dart';
 import '../../features/auth/login_screen.dart';
-import '../../features/auth/signup_screen.dart';
 import '../../features/chat/chat_tab.dart';
 import '../../features/coach/coach_page.dart';
 import '../../features/dashboard/home_tab.dart';
@@ -51,11 +50,7 @@ final GoRouter appRouter = GoRouter(
     ),
     GoRoute(
       path: '/signup',
-      pageBuilder: (context, state) => slideTransition(
-        context: context,
-        state: state,
-        child: SignupScreen(),
-      ),
+      redirect: (_, __) => '/login',
     ),
 
     // ─── Standalone routes ────────

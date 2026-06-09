@@ -6,6 +6,23 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/services/chat_service.dart';
 
+/// Subtle left-border color for each tone label.
+Color? _toneColor(String? tone) {
+  switch (tone) {
+    case 'positive':
+      return const Color(0xFF4CAF50);
+    case 'resistant':
+    case 'frustrated':
+      return const Color(0xFFFF9800);
+    case 'wavering':
+      return const Color(0xFF9C27B0);
+    case 'curious':
+      return const Color(0xFF2196F3);
+    default:
+      return null;
+  }
+}
+
 /// Chat bubble widget for user and guru messages.
 class ChatBubble extends StatelessWidget {
   final ChatMessage message;
@@ -55,7 +72,16 @@ class ChatBubble extends StatelessWidget {
                       )
                     : null,
                 color: isUser ? null : context.colors.surface,
-                border: isUser ? null : Border.all(color: context.colors.glassBorder),
+                border: isUser
+                    ? null
+                    : _toneColor(message.tone) != null
+                        ? Border(
+                            left: BorderSide(color: _toneColor(message.tone)!, width: 3),
+                            top: BorderSide(color: context.colors.glassBorder),
+                            right: BorderSide(color: context.colors.glassBorder),
+                            bottom: BorderSide(color: context.colors.glassBorder),
+                          )
+                        : Border.all(color: context.colors.glassBorder),
                 borderRadius: BorderRadius.only(
                   topLeft: Radius.circular(18),
                   topRight: Radius.circular(18),

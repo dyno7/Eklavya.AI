@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/services/auth_service.dart';
 import '../../core/services/dashboard_service.dart';
@@ -229,7 +230,28 @@ class _ProfileTabState extends ConsumerState<ProfileTab> {
                     ListTile(
                       leading: Icon(Icons.info_outline_rounded, color: context.colors.textSecondary),
                       title: Text('About Eklavya.AI', style: TextStyle(color: context.colors.textPrimary)),
+                      subtitle: Text('v1.0.0', style: TextStyle(color: context.colors.textTertiary, fontSize: 12)),
                       trailing: Icon(Icons.chevron_right_rounded, color: context.colors.textTertiary),
+                    ),
+                    Divider(color: context.colors.glassBorder, height: 1),
+                    ListTile(
+                      leading: Icon(Icons.privacy_tip_outlined, color: context.colors.textSecondary),
+                      title: Text('Privacy Policy', style: TextStyle(color: context.colors.textPrimary)),
+                      trailing: Icon(Icons.open_in_new_rounded, size: 16, color: context.colors.textTertiary),
+                      onTap: () async {
+                        final uri = Uri.parse('https://eklavya.ai/privacy');
+                        if (await canLaunchUrl(uri)) launchUrl(uri, mode: LaunchMode.externalApplication);
+                      },
+                    ),
+                    Divider(color: context.colors.glassBorder, height: 1),
+                    ListTile(
+                      leading: Icon(Icons.gavel_rounded, color: context.colors.textSecondary),
+                      title: Text('Terms of Service', style: TextStyle(color: context.colors.textPrimary)),
+                      trailing: Icon(Icons.open_in_new_rounded, size: 16, color: context.colors.textTertiary),
+                      onTap: () async {
+                        final uri = Uri.parse('https://eklavya.ai/terms');
+                        if (await canLaunchUrl(uri)) launchUrl(uri, mode: LaunchMode.externalApplication);
+                      },
                     ),
                     Divider(color: context.colors.glassBorder, height: 1),
                     ListTile(

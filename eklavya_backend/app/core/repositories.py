@@ -140,7 +140,6 @@ async def update_goal(
         update(Goal).where(Goal.id == goal_id).values(**update_data)
     )
     await db.commit()
-    return await get_goal_by_id(db, goal_id)
 
 
 # ─── Milestones ────────────────────────────────────────────────
@@ -276,7 +275,6 @@ async def update_task_status(
         update(Task).where(Task.id == task_id).values(**update_data)
     )
     await db.commit()
-    return await get_task_by_id(db, task_id)
 
 
 async def update_milestone_status(
@@ -288,7 +286,6 @@ async def update_milestone_status(
         update(Milestone).where(Milestone.id == milestone_id).values(status=status)
     )
     await db.commit()
-    return await get_milestone_by_id(db, milestone_id)
 
 
 # ─── Badges ───────────────────────────────────────────────────

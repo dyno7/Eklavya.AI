@@ -6,7 +6,6 @@ Endpoints:
 - POST /api/v1/dashboard/claim-task/{task_id} — Complete a task and earn XP
 """
 
-import asyncio
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -188,24 +187,17 @@ async def claim_task(
     # ── Invalidate dashboard cache so next load is fresh ──────────────────────
     DashboardCache.invalidate(str(current_user_id))
 
-    # 1 + 2. Fetch task and previous completion timestamp in parallel
-    task, previous_completion = await asyncio.gather(
-        repo.get_task_by_id(db, task_id),
-        repo.get_latest_task_completion_for_user(db, current_user_id),
-    )
+    # SQLAlchemy async sessions don't allow concurrent ops on the same session.
+    task = await repo.get_task_by_id(db, task_id)
+    previous_completion = await repo.get_latest_task_completion_for_user(db, current_user_id)
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
     if task.status == TaskStatus.COMPLETED:
         raise HTTPException(status_code=400, detail="Task already completed")
 
-    # Capture attributes before ORM state is expired (prevents MissingGreenlet
-    # on async lazy-loads after expire_all()).
     task_milestone_id = task.milestone_id
     task_xp_reward = task.xp_reward
     await repo.update_task_status(db, task_id, TaskStatus.COMPLETED)
-
-    # 5. Expire cached ORM state so subsequent queries fetch fresh rows.
-    db.expire_all()
 
     # 6. Advance milestone / goal state when all nested tasks are complete.
     bonus_xp_from_milestone = 0
@@ -274,27 +266,19 @@ async def claim_task(
         else:
             user.current_streak = 1
         user.updated_at = datetime.now(timezone.utc)
-        try:
-            await db.commit()
-            await db.refresh(user)
-        except Exception as e:
-            logger.error("Failed to commit user XP/streak update: %s", e)
-            try:
-                await db.rollback()
-            except Exception:
-                pass
-
-        # Log RL reward signal (optional — reward_signal_logs may not exist
-        # if migration 002 hasn't been run yet; failure must not break task completion)
+        # Merge reward signal log into same commit to save a round-trip.
         try:
             db.add(RewardSignalLog(
                 user_id=current_user_id,
                 action_type="task_complete",
                 reward_value=1.0,
             ))
+        except Exception:
+            pass
+        try:
             await db.commit()
         except Exception as e:
-            logger.warning("RewardSignalLog insert skipped: %s", e)
+            logger.error("Failed to commit user XP/streak update: %s", e)
             try:
                 await db.rollback()
             except Exception:
@@ -316,9 +300,13 @@ async def claim_task(
             if bonus_xp_from_goal > 0:
                 badge_checks.append(repo.award_badge_if_not_earned(db, current_user_id, "Goal Crusher"))
 
-            if badge_checks:
-                results = await asyncio.gather(*badge_checks, return_exceptions=True)
-                badges_awarded = [b for b in results if isinstance(b, str)]
+            for check in badge_checks:
+                try:
+                    result = await check
+                    if isinstance(result, str):
+                        badges_awarded.append(result)
+                except Exception as badge_err:
+                    logger.warning("Badge check failed: %s", badge_err)
         except Exception as e:
             logger.warning("Badge evaluation skipped: %s", e)
             try:

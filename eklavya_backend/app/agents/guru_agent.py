@@ -1,7 +1,7 @@
 """
 Guru Agent — the conversational AI that creates personalized roadmaps.
 
-Uses Google Gemini for generation. Maintains per-session conversation history.
+Uses Groq (Llama 3.3 70B) for generation. Maintains per-session conversation history.
 """
 
 import asyncio
@@ -9,13 +9,14 @@ import json
 import logging
 import re
 
-from google import genai
-from google.genai import types
+from groq import AsyncGroq
 
 from app.agents.prompts import get_system_prompt
 from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
+
+_GROQ_MODEL = "llama-3.3-70b-versatile"
 
 
 class GuruAgent:
@@ -34,7 +35,7 @@ class GuruAgent:
         self.user_id = user_id
         self.history: list[dict[str, str]] = []
         self.roadmap: dict | None = None
-        
+
         # Base capability scalar (Adaptive Goal Decomposition)
         self.user_capability_scalar = 1.0
 
@@ -48,7 +49,7 @@ class GuruAgent:
         else:
             self.user_capability_scalar = 0.9
             streak_tier = "REBUILDING"
-        
+
         dynamic_context = (
             f"\n\n## Adaptive Goal Decomposition\n"
             f"The user's current capability scalar is {self.user_capability_scalar}. "
@@ -80,7 +81,7 @@ class GuruAgent:
                 "Use this memory to keep continuity and help the user retrieve or modify existing roadmaps safely:\n"
                 f"{memory_context}"
             )
-        
+
         dynamic_context += """
 ## Navigation Commands
 If the user explicitly asks to see their roadmap, asks to navigate to it, or asks to start learning, reply using EXACTLY this JSON format (no other text outside of it):
@@ -90,25 +91,16 @@ If the user explicitly asks to see their roadmap, asks to navigate to it, or ask
 You can customize the "message" field.
 """
 
-        # Put the core system prompt LAST so the strict output JSON formatting rules are the final things the model reads.
+        # Core system prompt last so strict JSON rules are freshest in context.
         self._system_prompt = dynamic_context + "\n\n" + get_system_prompt(domain)
 
-        # Configure Gemini GenAI SDK
         settings = get_settings()
-        if settings.GEMINI_API_KEY:
-            self._client = genai.Client(api_key=settings.GEMINI_API_KEY)
-            self._chat = self._client.chats.create(
-                model="gemini-2.5-flash",
-                config=types.GenerateContentConfig(
-                    system_instruction=self._system_prompt,
-                    temperature=0.7,
-                )
-            )
+        if settings.GROQ_API_KEY:
+            self._client = AsyncGroq(api_key=settings.GROQ_API_KEY)
             self._offline = False
         else:
-            logger.warning("GEMINI_API_KEY not set — running in offline demo mode")
-            self._model = None
-            self._chat = None
+            logger.warning("GROQ_API_KEY not set — running in offline demo mode")
+            self._client = None
             self._offline = True
             self._demo_step = 0
 
@@ -124,7 +116,7 @@ You can customize the "message" field.
         if self._offline:
             reply, is_ready = self._demo_response(user_message)
         else:
-            reply, is_ready = await self._gemini_response(user_message)
+            reply, is_ready = await self._groq_response()
 
         # Parse QUICK_REPLY options from the reply
         options = self._extract_quick_reply(reply)
@@ -137,7 +129,6 @@ You can customize the "message" field.
         if is_ready:
             self.roadmap = self._extract_roadmap(reply)
             if self.roadmap:
-                # Reply may be raw JSON (from json mode) or ROADMAP_READY+markdown — strip both.
                 try:
                     json.loads(reply.strip())
                     clean_reply = "🎉 Your personalized roadmap is ready! Head to the Goals tab to start learning."
@@ -171,6 +162,84 @@ You can customize the "message" field.
         self.history[-1]["content"] = reply
         return reply, False, navigate_to_roadmap, options
 
+    def _build_messages(self) -> list[dict]:
+        """Full message list: system prompt + conversation history."""
+        return [{"role": "system", "content": self._system_prompt}] + self.history
+
+    async def _groq_response(self) -> tuple[str, bool]:
+        """Get response from Groq API (stateless — passes full history each call)."""
+        messages = self._build_messages()
+        reply = ""
+
+        for attempt in range(3):
+            try:
+                response = await asyncio.wait_for(
+                    self._client.chat.completions.create(
+                        model=_GROQ_MODEL,
+                        messages=messages,
+                        temperature=0.7,
+                        max_tokens=4096,
+                    ),
+                    timeout=60,
+                )
+                reply = response.choices[0].message.content or ""
+                break
+            except asyncio.TimeoutError:
+                logger.error("Groq API timed out (attempt %d)", attempt + 1)
+                if attempt == 2:
+                    return "I'm taking too long — please send your message again.", False
+            except Exception as e:
+                err_str = str(e)
+                if ("429" in err_str or "rate_limit" in err_str.lower()) and attempt < 2:
+                    wait = 2 ** attempt
+                    logger.warning("Groq 429 rate limit, retrying in %ss (attempt %d)", wait, attempt + 1)
+                    await asyncio.sleep(wait)
+                    continue
+                logger.error("Groq API error: %s", e)
+                if "429" in err_str or "rate_limit" in err_str.lower():
+                    return "The AI is a bit overloaded right now — please try again in a moment.", False
+                return "I'm having a moment — could you try again?", False
+
+        signaled_ready = "ROADMAP_READY" in reply
+        has_json_block = "```json" in reply and '"milestones"' in reply
+        has_inline_json = reply.strip().startswith("{") and '"milestones"' in reply
+
+        if signaled_ready or has_json_block or has_inline_json:
+            if self._extract_roadmap(reply) is not None:
+                return reply, True
+
+            # Signal present but JSON malformed — do a JSON-mode follow-up.
+            logger.info("Model signaled readiness; doing JSON-mode follow-up call")
+            try:
+                followup_messages = messages + [
+                    {"role": "assistant", "content": reply},
+                    {"role": "user", "content": "Output the full roadmap JSON now. Return ONLY the JSON object, no surrounding text or markdown."},
+                ]
+                followup = await asyncio.wait_for(
+                    self._client.chat.completions.create(
+                        model=_GROQ_MODEL,
+                        messages=followup_messages,
+                        temperature=0.1,
+                        max_tokens=8000,
+                        response_format={"type": "json_object"},
+                    ),
+                    timeout=120,
+                )
+                json_reply = (followup.choices[0].message.content or "").strip()
+                parsed = json.loads(json_reply)
+                if "milestones" in parsed:
+                    return json_reply, True
+            except asyncio.TimeoutError:
+                logger.error("Groq JSON-mode follow-up timed out")
+            except json.JSONDecodeError as e:
+                logger.error("JSON-mode follow-up returned invalid JSON: %s", e)
+            except Exception as e:
+                logger.error("JSON-mode follow-up failed: %s", e)
+
+            return reply, False
+
+        return reply, False
+
     @staticmethod
     def _extract_quick_reply(text: str) -> list[str] | None:
         """Extract QUICK_REPLY:[...] options from the Guru's response."""
@@ -182,71 +251,6 @@ You can customize the "message" field.
             except Exception:
                 pass
         return None
-
-    async def _gemini_response(self, user_message: str) -> tuple[str, bool]:
-        """Get response from Gemini API.
-
-        Flow:
-        1. Normal conversational call (text mode).
-        2. If the model emits ROADMAP_READY (signaling it has enough info), parse
-           the embedded JSON. If parsing succeeds, return it. If the JSON is
-           malformed/truncated, do a second JSON-mode call to get clean output.
-        3. Otherwise return the text reply as-is (more questions / chit-chat).
-        """
-        try:
-            response = await asyncio.wait_for(
-                asyncio.to_thread(self._chat.send_message, user_message),
-                timeout=60,
-            )
-            reply = response.text or ""
-        except asyncio.TimeoutError:
-            logger.error("Gemini API timed out (conversation pass)")
-            return "I'm taking too long — please send your message again.", False
-        except Exception as e:
-            logger.error("Gemini API error: %s", e)
-            return "I'm having a moment — could you try again?", False
-
-        signaled_ready = "ROADMAP_READY" in reply
-        has_json_block = "```json" in reply and '"milestones"' in reply
-        has_inline_json = reply.strip().startswith("{") and '"milestones"' in reply
-
-        # Try to extract a valid roadmap from the conversational reply.
-        if signaled_ready or has_json_block or has_inline_json:
-            if self._extract_roadmap(reply) is not None:
-                return reply, True
-
-            # The model signaled readiness but the JSON is malformed/missing.
-            # Do a second pass forcing JSON mode for a clean roadmap.
-            logger.info("Model signaled readiness; doing JSON-mode follow-up call")
-            try:
-                followup = await asyncio.wait_for(
-                    asyncio.to_thread(
-                        self._chat.send_message,
-                        "Output the full roadmap JSON now. Return ONLY the JSON object, no surrounding text or markdown.",
-                        config=types.GenerateContentConfig(
-                            response_mime_type="application/json",
-                            max_output_tokens=16000,
-                        ),
-                    ),
-                    timeout=120,
-                )
-                json_reply = (followup.text or "").strip()
-                clean = json_reply.replace("```json", "").replace("```", "").strip()
-                parsed = json.loads(clean)
-                if "milestones" in parsed:
-                    return clean, True
-            except asyncio.TimeoutError:
-                logger.error("Gemini JSON-mode follow-up timed out")
-            except json.JSONDecodeError as e:
-                logger.error("JSON-mode follow-up returned invalid JSON: %s", e)
-            except Exception as e:
-                logger.error("JSON-mode follow-up failed: %s", e)
-
-            # Fall through — return the original reply (without is_ready) so the user
-            # at least sees something. Frontend will not navigate.
-            return reply, False
-
-        return reply, False
 
     def _demo_response(self, user_message: str) -> tuple[str, bool]:
         """Offline demo responses that simulate the Guru conversation flow."""
@@ -261,95 +265,46 @@ You can customize the "message" field.
             )
         elif self._demo_step == 2:
             return (
-                "Great choice! That's a fascinating area with lots of practical applications.\n\n"
-                "How would you describe your current experience level in this domain? Are you a complete beginner, "
-                "or do you have some background already?",
+                "Great choice! How would you describe your current experience level in this domain?",
                 False,
             )
         elif self._demo_step == 3:
             return (
-                "Perfect, that helps me calibrate the roadmap for you.\n\n"
-                "One more thing — how much time can you realistically commit per day? "
+                "Perfect. How much time can you realistically commit per day? "
                 "Even 30 minutes of focused learning adds up quickly!",
                 False,
             )
         else:
-            # Generate demo roadmap
             roadmap = self._generate_demo_roadmap()
             roadmap_json = json.dumps(roadmap, indent=2)
             reply = f"ROADMAP_READY\n```json\n{roadmap_json}\n```"
             return reply, True
 
     def _generate_demo_roadmap(self) -> dict:
-        """Generate a hardcoded generic roadmap for demo mode."""
         return {
             "title": "Master Your Goal",
             "domain": "learning",
             "estimated_weeks": 12,
             "milestones": [
                 {
-                    "title": "Math & Python Foundations",
+                    "title": "Foundations",
                     "order": 1,
                     "estimated_days": 14,
                     "tasks": [
-                        {"title": "Watch overview video for basics", "type": "watch", "xp_reward": 20, "estimated_minutes": 45},
+                        {"title": "Watch overview video", "type": "watch", "xp_reward": 20, "estimated_minutes": 45},
                         {"title": "Read introductory guide", "type": "read", "xp_reward": 20, "estimated_minutes": 40},
-                        {"title": "Fundamental skills practice", "type": "practice", "xp_reward": 30, "estimated_minutes": 60},
+                        {"title": "Fundamentals practice", "type": "practice", "xp_reward": 30, "estimated_minutes": 60},
                         {"title": "Quiz: Core concepts", "type": "quiz", "xp_reward": 25, "estimated_minutes": 15},
                     ],
                 },
                 {
-                    "title": "Intermediate Techniques",
+                    "title": "Intermediate Skills",
                     "order": 2,
                     "estimated_days": 14,
                     "tasks": [
-                        {"title": "Watch: Component architecture", "type": "watch", "xp_reward": 25, "estimated_minutes": 30},
-                        {"title": "Read: Deep Learning Book Ch.6 — Deep Feedforward Networks", "type": "read", "xp_reward": 20, "estimated_minutes": 50},
-                        {"title": "Code a perceptron from scratch in Python", "type": "practice", "xp_reward": 40, "estimated_minutes": 90},
-                        {"title": "Implement backpropagation manually", "type": "practice", "xp_reward": 45, "estimated_minutes": 120},
-                    ],
-                },
-                {
-                    "title": "CNNs & Computer Vision",
-                    "order": 3,
-                    "estimated_days": 14,
-                    "tasks": [
-                        {"title": "Watch: CNN explainers (Andrej Karpathy)", "type": "watch", "xp_reward": 25, "estimated_minutes": 40},
-                        {"title": "Build an image classifier with PyTorch", "type": "practice", "xp_reward": 50, "estimated_minutes": 120},
-                        {"title": "Transfer learning with ResNet", "type": "practice", "xp_reward": 40, "estimated_minutes": 90},
-                        {"title": "Quiz: Convolution operations", "type": "quiz", "xp_reward": 25, "estimated_minutes": 20},
-                    ],
-                },
-                {
-                    "title": "RNNs & Sequence Models",
-                    "order": 4,
-                    "estimated_days": 10,
-                    "tasks": [
-                        {"title": "Read: Understanding LSTMs (Chris Olah)", "type": "read", "xp_reward": 20, "estimated_minutes": 30},
-                        {"title": "Build a text generator with LSTM", "type": "practice", "xp_reward": 45, "estimated_minutes": 120},
-                        {"title": "Sequence-to-sequence model basics", "type": "watch", "xp_reward": 25, "estimated_minutes": 45},
-                    ],
-                },
-                {
-                    "title": "Transformers & Attention",
-                    "order": 5,
-                    "estimated_days": 14,
-                    "tasks": [
-                        {"title": "Read: Attention Is All You Need (paper)", "type": "read", "xp_reward": 30, "estimated_minutes": 60},
-                        {"title": "Watch: Andrej Karpathy — Let's build GPT", "type": "watch", "xp_reward": 30, "estimated_minutes": 120},
-                        {"title": "Build a mini-GPT from scratch", "type": "practice", "xp_reward": 50, "estimated_minutes": 180},
-                        {"title": "Fine-tune a HuggingFace model", "type": "practice", "xp_reward": 45, "estimated_minutes": 90},
-                    ],
-                },
-                {
-                    "title": "Capstone Project",
-                    "order": 6,
-                    "estimated_days": 14,
-                    "tasks": [
-                        {"title": "Choose and scope your project", "type": "custom", "xp_reward": 15, "estimated_minutes": 30},
-                        {"title": "Implement and train your model", "type": "practice", "xp_reward": 50, "estimated_minutes": 240},
-                        {"title": "Write a project report / blog post", "type": "write", "xp_reward": 35, "estimated_minutes": 90},
-                        {"title": "Deploy model as an API", "type": "practice", "xp_reward": 40, "estimated_minutes": 120},
+                        {"title": "Deep dive video", "type": "watch", "xp_reward": 25, "estimated_minutes": 30},
+                        {"title": "Hands-on project", "type": "practice", "xp_reward": 40, "estimated_minutes": 90},
+                        {"title": "Build something real", "type": "practice", "xp_reward": 45, "estimated_minutes": 120},
                     ],
                 },
             ],
@@ -358,13 +313,11 @@ You can customize the "message" field.
     def _extract_roadmap(self, text: str) -> dict | None:
         """Extract JSON roadmap from the Guru's response."""
         try:
-            # First try parsing it as pure JSON
             try:
                 parsed = json.loads(text.strip())
                 if "milestones" in parsed:
                     return parsed
             except json.JSONDecodeError:
-                # Fallback: Look for JSON block in markdown
                 match = re.search(r"```json\s*([\s\S]*?)\s*```", text)
                 if match:
                     return json.loads(match.group(1))
@@ -373,19 +326,11 @@ You can customize the "message" field.
         return None
 
     def get_history(self) -> list[dict[str, str]]:
-        """Return the conversation history."""
         return self.history.copy()
 
     def reset(self) -> None:
-        """Reset the conversation."""
+        """Reset conversation state (history is all state; no chat object to recreate)."""
         self.history = []
         self.roadmap = None
-        self._demo_step = 0
-        if self._chat and not self._offline:
-            self._chat = self._client.chats.create(
-                model="gemini-2.5-flash",
-                config=types.GenerateContentConfig(
-                    system_instruction=self._system_prompt,
-                    temperature=0.7,
-                )
-            )
+        if self._offline:
+            self._demo_step = 0

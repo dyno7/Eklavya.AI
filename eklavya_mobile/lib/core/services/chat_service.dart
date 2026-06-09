@@ -33,6 +33,8 @@ class ChatMessage {
   final DateTime timestamp;
   final List<String>? options;
   final List<ChatResource>? resources;
+  // Tone detected by backend: "positive", "neutral", "resistant", "wavering", "curious"
+  final String? tone;
 
   ChatMessage({
     required this.text,
@@ -40,6 +42,7 @@ class ChatMessage {
     DateTime? timestamp,
     this.options,
     this.resources,
+    this.tone,
   }) : timestamp = timestamp ?? DateTime.now();
 }
 
@@ -95,8 +98,8 @@ class ChatService {
   }
 
   /// Send a message and get the Guru's reply.
-  /// Returns (replyText, isRoadmapReady, roadmapJson, navigateToRoadmap)
-  Future<(String, bool, Map<String, dynamic>?, bool, List<String>?, List<ChatResource>?)> sendMessage(String message) async {
+  /// Returns (replyText, isRoadmapReady, roadmapJson, navigateToRoadmap, options, resources, tone)
+  Future<(String, bool, Map<String, dynamic>?, bool, List<String>?, List<ChatResource>?, String?)> sendMessage(String message) async {
     try {
       final body = <String, dynamic>{
         'message': message,
@@ -122,6 +125,7 @@ class ChatService {
             ?.whereType<Map>()
             .map((r) => ChatResource.fromJson(Map<String, dynamic>.from(r)))
             .toList();
+        final tone = data['tone'] as String?;
         return (
           data['reply'] as String,
           data['is_roadmap_ready'] as bool? ?? false,
@@ -129,6 +133,7 @@ class ChatService {
           data['navigate_to_roadmap'] as bool? ?? false,
           options,
           resources,
+          tone,
         );
       }
     } catch (e) {
@@ -200,12 +205,12 @@ class ChatService {
   }
 
   /// Offline canned responses for demo when backend isn't running.
-  (String, bool, Map<String, dynamic>?, bool, List<String>?, List<ChatResource>?) _offlineResponse(String message) {
+  (String, bool, Map<String, dynamic>?, bool, List<String>?, List<ChatResource>?, String?) _offlineResponse(String message) {
     // Mid-conversation failure (session was active) — show retry instead of re-greeting.
     if (_currentSessionId != null) {
       return (
         "I'm taking longer than expected — please send your message again.",
-        false, null, false, null, null,
+        false, null, false, null, null, null,
       );
     }
 
@@ -215,26 +220,26 @@ class ChatService {
       case 1:
         return (
           "Welcome! I'm your Eklavya Guru 🧠\n\nWhat skill or goal do you want to master?",
-          false, null, false, null, null,
+          false, null, false, null, null, null,
         );
       case 2:
         return (
           "Nice! What's your experience level?",
           false, null, false,
           ["Beginner", "Intermediate", "Advanced"],
-          null,
+          null, null,
         );
       case 3:
         return (
           "How much time can you commit per day?",
           false, null, false,
           ["30 min/day", "1 hr/day", "2+ hrs/day"],
-          null,
+          null, null,
         );
       default:
         return (
           "🎉 Your roadmap is ready!",
-          true, _demoRoadmap(), false, null, _demoResources(),
+          true, _demoRoadmap(), false, null, _demoResources(), null,
         );
     }
   }

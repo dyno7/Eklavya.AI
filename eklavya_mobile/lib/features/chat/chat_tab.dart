@@ -283,11 +283,13 @@ class _ChatTabState extends State<ChatTab> {
                   if (_roadmapReady) ...[
                     _buildSuccessBar(context, theme),
                     SizedBox(height: AppSpacing.md),
-                  ],
-                  if (_hasActiveOptions && !_roadmapReady)
-                    _buildOptionChips(context, theme)
-                  else
+                  ] else ...[
+                    if (_hasActiveOptions) ...[
+                      _buildOptionChips(context, theme),
+                      SizedBox(height: AppSpacing.md),
+                    ],
                     _buildInputBar(context, theme),
+                  ],
                 ],
               ),
             ),

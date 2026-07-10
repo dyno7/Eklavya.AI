@@ -1,7 +1,7 @@
 """
 Guru Agent — the conversational AI that creates personalized roadmaps.
 
-Uses Groq (Llama 3.3 70B) for generation. Maintains per-session conversation history.
+Uses Gemini for generation. Maintains per-session conversation history.
 """
 
 import asyncio
@@ -9,14 +9,17 @@ import json
 import logging
 import re
 
-from groq import AsyncGroq
+from google import genai
+from google.genai import errors, types
 
 from app.agents.prompts import get_system_prompt
+from app.agents.schemas import RoadmapSchema
 from app.core.config import get_settings
+from app.core.link_validator import fix_roadmap_resources
 
 logger = logging.getLogger(__name__)
 
-_GROQ_MODEL = "llama-3.3-70b-versatile"
+_MODEL = "gemini-3.5-flash"
 
 
 class GuruAgent:
@@ -95,11 +98,11 @@ You can customize the "message" field.
         self._system_prompt = dynamic_context + "\n\n" + get_system_prompt(domain)
 
         settings = get_settings()
-        if settings.GROQ_API_KEY:
-            self._client = AsyncGroq(api_key=settings.GROQ_API_KEY)
+        if settings.GEMINI_API_KEY:
+            self._client = genai.Client(api_key=settings.GEMINI_API_KEY)
             self._offline = False
         else:
-            logger.warning("GROQ_API_KEY not set — running in offline demo mode")
+            logger.warning("GEMINI_API_KEY not set — running in offline demo mode")
             self._client = None
             self._offline = True
             self._demo_step = 0
@@ -116,7 +119,7 @@ You can customize the "message" field.
         if self._offline:
             reply, is_ready = self._demo_response(user_message)
         else:
-            reply, is_ready = await self._groq_response()
+            reply, is_ready = await self._gemini_response()
 
         # Parse QUICK_REPLY options from the reply
         options = self._extract_quick_reply(reply)
@@ -129,6 +132,10 @@ You can customize the "message" field.
         if is_ready:
             self.roadmap = self._extract_roadmap(reply)
             if self.roadmap:
+                try:
+                    await fix_roadmap_resources(self.roadmap)
+                except Exception as e:
+                    logger.warning("Resource link validation failed, keeping originals: %s", e)
                 try:
                     json.loads(reply.strip())
                     clean_reply = "🎉 Your personalized roadmap is ready! Head to the Goals tab to start learning."
@@ -162,42 +169,57 @@ You can customize the "message" field.
         self.history[-1]["content"] = reply
         return reply, False, navigate_to_roadmap, options
 
-    def _build_messages(self) -> list[dict]:
-        """Full message list: system prompt + conversation history."""
-        return [{"role": "system", "content": self._system_prompt}] + self.history
+    def _build_contents(self, extra: list[types.Content] | None = None) -> list[types.Content]:
+        """Conversation history as Gemini Content objects (system prompt goes via config, not here)."""
+        contents = [
+            types.Content(
+                role="model" if turn["role"] == "assistant" else "user",
+                parts=[types.Part(text=turn["content"])],
+            )
+            for turn in self.history
+        ]
+        if extra:
+            contents.extend(extra)
+        return contents
 
-    async def _groq_response(self) -> tuple[str, bool]:
-        """Get response from Groq API (stateless — passes full history each call)."""
-        messages = self._build_messages()
+    async def _gemini_response(self) -> tuple[str, bool]:
+        """Get response from Gemini (stateless — passes full history each call)."""
+        contents = self._build_contents()
+        config = types.GenerateContentConfig(
+            system_instruction=self._system_prompt,
+            temperature=0.7,
+            max_output_tokens=4096,
+        )
         reply = ""
 
         for attempt in range(3):
             try:
                 response = await asyncio.wait_for(
-                    self._client.chat.completions.create(
-                        model=_GROQ_MODEL,
-                        messages=messages,
-                        temperature=0.7,
-                        max_tokens=4096,
+                    self._client.aio.models.generate_content(
+                        model=_MODEL,
+                        contents=contents,
+                        config=config,
                     ),
                     timeout=60,
                 )
-                reply = response.choices[0].message.content or ""
+                reply = response.text or ""
                 break
             except asyncio.TimeoutError:
-                logger.error("Groq API timed out (attempt %d)", attempt + 1)
+                logger.error("Gemini API timed out (attempt %d)", attempt + 1)
                 if attempt == 2:
                     return "I'm taking too long — please send your message again.", False
-            except Exception as e:
-                err_str = str(e)
-                if ("429" in err_str or "rate_limit" in err_str.lower()) and attempt < 2:
+            except errors.APIError as e:
+                if e.code == 429 and attempt < 2:
                     wait = 2 ** attempt
-                    logger.warning("Groq 429 rate limit, retrying in %ss (attempt %d)", wait, attempt + 1)
+                    logger.warning("Gemini 429 rate limit, retrying in %ss (attempt %d)", wait, attempt + 1)
                     await asyncio.sleep(wait)
                     continue
-                logger.error("Groq API error: %s", e)
-                if "429" in err_str or "rate_limit" in err_str.lower():
+                logger.error("Gemini API error: %s", e)
+                if e.code == 429:
                     return "The AI is a bit overloaded right now — please try again in a moment.", False
+                return "I'm having a moment — could you try again?", False
+            except Exception as e:
+                logger.error("Gemini API error: %s", e)
                 return "I'm having a moment — could you try again?", False
 
         signaled_ready = "ROADMAP_READY" in reply
@@ -208,29 +230,38 @@ You can customize the "message" field.
             if self._extract_roadmap(reply) is not None:
                 return reply, True
 
-            # Signal present but JSON malformed — do a JSON-mode follow-up.
+            # Signal present but JSON malformed — do a JSON-mode follow-up,
+            # constrained by a strict response schema so the output is
+            # structurally guaranteed to be valid roadmap JSON.
             logger.info("Model signaled readiness; doing JSON-mode follow-up call")
             try:
-                followup_messages = messages + [
-                    {"role": "assistant", "content": reply},
-                    {"role": "user", "content": "Output the full roadmap JSON now. Return ONLY the JSON object, no surrounding text or markdown."},
-                ]
+                followup_contents = self._build_contents(extra=[
+                    types.Content(role="model", parts=[types.Part(text=reply)]),
+                    types.Content(
+                        role="user",
+                        parts=[types.Part(text="Output the full roadmap JSON now. Return ONLY the JSON object, no surrounding text or markdown.")],
+                    ),
+                ])
                 followup = await asyncio.wait_for(
-                    self._client.chat.completions.create(
-                        model=_GROQ_MODEL,
-                        messages=followup_messages,
-                        temperature=0.1,
-                        max_tokens=8000,
-                        response_format={"type": "json_object"},
+                    self._client.aio.models.generate_content(
+                        model=_MODEL,
+                        contents=followup_contents,
+                        config=types.GenerateContentConfig(
+                            system_instruction=self._system_prompt,
+                            temperature=0.1,
+                            max_output_tokens=8192,
+                            response_mime_type="application/json",
+                            response_schema=RoadmapSchema,
+                        ),
                     ),
                     timeout=120,
                 )
-                json_reply = (followup.choices[0].message.content or "").strip()
+                json_reply = (followup.text or "").strip()
                 parsed = json.loads(json_reply)
                 if "milestones" in parsed:
                     return json_reply, True
             except asyncio.TimeoutError:
-                logger.error("Groq JSON-mode follow-up timed out")
+                logger.error("Gemini JSON-mode follow-up timed out")
             except json.JSONDecodeError as e:
                 logger.error("JSON-mode follow-up returned invalid JSON: %s", e)
             except Exception as e:

@@ -38,8 +38,8 @@ class Settings(BaseSettings):
     # Environment (development / staging / production)
     ENVIRONMENT: str = "development"
 
-    # Groq API key — for the Guru Agent (Llama 3.3 70B)
-    GROQ_API_KEY: str = ""
+    # Google Gemini API key — for the Guru Agent and Coach Agent
+    GEMINI_API_KEY: str = ""
 
 
 @lru_cache

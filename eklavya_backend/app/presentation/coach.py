@@ -9,6 +9,7 @@ from app.agents.coach_agent import CoachAgent
 from app.core.auth import CurrentUser, get_current_user, get_current_user_id
 from app.core.database import get_db
 from app.core.gdi_service import GdiService
+from app.core.link_validator import fix_resources
 from app.core import repositories as repo
 
 router = APIRouter(prefix="/api/v1/coach", tags=["Coach"])
@@ -71,7 +72,14 @@ async def ask_coach(
         _coach_sessions[session_id] = agent
 
     reply = await agent.ask(request.message)
-    resources = CoachAgent.parse_resources(reply) or None
+    resources = CoachAgent.parse_resources(reply)
+    if resources:
+        try:
+            resources = [r for r in await fix_resources(resources) if r.get("verified")] or None
+        except Exception:
+            resources = None
+    else:
+        resources = None
 
     # Persist to chat memory with a coach prefix on session_id for separation
     try:

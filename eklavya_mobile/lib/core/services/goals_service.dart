@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 
 import '../config/app_config.dart';
 import 'auth_service.dart';
+import 'roadmap_sync_service.dart';
 
 class GoalItem {
   final String id;
@@ -14,6 +15,11 @@ class GoalItem {
   final int milestonesCount;
   final int completedMilestones;
   final double progress;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+  final DateTime? archivedAt;
+  final DateTime? lastActivityAt;
+  final bool archived;
 
   GoalItem({
     required this.id,
@@ -24,6 +30,11 @@ class GoalItem {
     required this.milestonesCount,
     required this.completedMilestones,
     required this.progress,
+    this.createdAt,
+    this.updatedAt,
+    this.archivedAt,
+    this.lastActivityAt,
+    this.archived = false,
   });
 
   factory GoalItem.fromJson(Map<String, dynamic> json) => GoalItem(
@@ -35,7 +46,19 @@ class GoalItem {
         milestonesCount: json['milestones_count'] ?? 0,
         completedMilestones: json['completed_milestones'] ?? 0,
         progress: (json['progress_percentage'] as num?)?.toDouble() ?? 0.0,
+        createdAt: _parseDateTime(json['created_at']),
+        updatedAt: _parseDateTime(json['updated_at']),
+        archivedAt: _parseDateTime(json['archived_at']),
+        lastActivityAt: _parseDateTime(json['last_activity_at']),
+        archived: json['archived'] ?? false,
       );
+
+  static DateTime? _parseDateTime(dynamic value) {
+    if (value is String && value.isNotEmpty) {
+      return DateTime.tryParse(value);
+    }
+    return null;
+  }
 }
 
 class GoalsService {
@@ -48,10 +71,10 @@ class GoalsService {
     return headers;
   }
 
-  Future<List<GoalItem>> fetchGoals() async {
+  Future<List<GoalItem>> fetchGoals({bool archived = false}) async {
     try {
       final response = await http.get(
-        Uri.parse('$_baseUrl/api/v1/goals/'),
+        Uri.parse('$_baseUrl/api/v1/goals/?archived=$archived'),
         headers: _headers,
       ).timeout(const Duration(seconds: 10));
 
@@ -96,6 +119,62 @@ class GoalsService {
       debugPrint('Goals API error: $e');
     }
     return [];
+  }
+
+  Future<bool> setGoalArchived(String goalId, bool archived) async {
+    try {
+      final response = await http.patch(
+        Uri.parse('$_baseUrl/api/v1/goals/$goalId'),
+        headers: _headers,
+        body: jsonEncode({'archived': archived}),
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        RoadmapSyncService.notifyRoadmapUpdated();
+        return true;
+      }
+    } catch (e) {
+      debugPrint('Goal archive API error: $e');
+    }
+    return false;
+  }
+
+  Future<bool> archiveGoal(String goalId) => setGoalArchived(goalId, true);
+
+  Future<bool> restoreGoal(String goalId) => setGoalArchived(goalId, false);
+
+  Future<bool> deleteGoal(String goalId) async {
+    try {
+      final response = await http.delete(
+        Uri.parse('$_baseUrl/api/v1/goals/$goalId'),
+        headers: _headers,
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 204) {
+        RoadmapSyncService.notifyRoadmapUpdated();
+        return true;
+      }
+    } catch (e) {
+      debugPrint('Goal delete API error: $e');
+    }
+    return false;
+  }
+
+  Future<bool> deleteTask(String taskId) async {
+    try {
+      final response = await http.delete(
+        Uri.parse('$_baseUrl/api/v1/tasks/$taskId'),
+        headers: _headers,
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 204) {
+        RoadmapSyncService.notifyRoadmapUpdated();
+        return true;
+      }
+    } catch (e) {
+      debugPrint('Task delete API error: $e');
+    }
+    return false;
   }
 
   Future<List<MilestoneItem>> fetchGoalRoadmap(String goalId) async {

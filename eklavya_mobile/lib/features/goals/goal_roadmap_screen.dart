@@ -27,6 +27,7 @@ class _GoalRoadmapScreenState extends ConsumerState<GoalRoadmapScreen> {
   final _goalsService = GoalsService();
   List<MilestoneItem>? _milestones;
   final Set<String> _completingTasks = {};
+  final Set<String> _deletingTasks = {};
 
   @override
   void initState() {
@@ -97,6 +98,66 @@ class _GoalRoadmapScreenState extends ConsumerState<GoalRoadmapScreen> {
         backgroundColor: context.colors.error,
         duration: const Duration(seconds: 4),
       ));
+    }
+  }
+
+  Future<void> _deleteTask(TaskItem task) async {
+    if (_deletingTasks.contains(task.id)) {
+      return;
+    }
+
+    final messenger = ScaffoldMessenger.of(context);
+    final successColor = context.colors.success;
+    final errorColor = context.colors.error;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete task?'),
+        content: Text('This permanently removes "${task.title}" from the roadmap.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) {
+      return;
+    }
+
+    setState(() {
+      _deletingTasks.add(task.id);
+    });
+
+    final ok = await _goalsService.deleteTask(task.id);
+    if (!mounted) return;
+
+    setState(() {
+      _deletingTasks.remove(task.id);
+    });
+
+    if (ok) {
+      await _fetchRoadmap();
+      ref.invalidate(dashboardProvider);
+      messenger.showSnackBar(
+        SnackBar(
+          content: const Text('Task deleted'),
+          backgroundColor: successColor,
+        ),
+      );
+    } else {
+      messenger.showSnackBar(
+        SnackBar(
+          content: const Text('Could not delete task'),
+          backgroundColor: errorColor,
+        ),
+      );
     }
   }
 
@@ -395,15 +456,49 @@ class _GoalRoadmapScreenState extends ConsumerState<GoalRoadmapScreen> {
                                   ],
                                 ],
                               ),
-                              trailing: isCompleting
-                                  ? const SizedBox(
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (!_deletingTasks.contains(task.id))
+                                    IconButton(
+                                      tooltip: 'Delete task',
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(),
+                                      icon: Icon(
+                                        Icons.delete_outline_rounded,
+                                        color: context.colors.error,
+                                        size: 20,
+                                      ),
+                                      onPressed: isCompleting
+                                          ? null
+                                          : () => _deleteTask(task),
+                                    )
+                                  else
+                                    SizedBox(
                                       width: 20,
                                       height: 20,
                                       child: CircularProgressIndicator(
-                                          strokeWidth: 2))
-                                  : Icon(isCompleted
-                                      ? Icons.expand_more_rounded
-                                      : Icons.info_outline_rounded),
+                                        strokeWidth: 2,
+                                        color: context.colors.primary,
+                                      ),
+                                    ),
+                                  const SizedBox(width: 8),
+                                  isCompleting
+                                      ? SizedBox(
+                                          width: 20,
+                                          height: 20,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: context.colors.primary,
+                                          ),
+                                        )
+                                      : Icon(
+                                          isCompleted
+                                              ? Icons.expand_more_rounded
+                                              : Icons.info_outline_rounded,
+                                        ),
+                                ],
+                              ),
                               children: [
                                 Container(
                                   width: double.infinity,

@@ -54,6 +54,18 @@ class GoalsNotifier extends AsyncNotifier<List<GoalItem>> {
   }
 }
 
+final archivedGoalsProvider =
+    AsyncNotifierProvider<ArchivedGoalsNotifier, List<GoalItem>>(
+        ArchivedGoalsNotifier.new);
+
+class ArchivedGoalsNotifier extends AsyncNotifier<List<GoalItem>> {
+  @override
+  Future<List<GoalItem>> build() {
+    ref.watch(roadmapSyncProvider);
+    return GoalsService().fetchGoals(archived: true);
+  }
+}
+
 // ─── Analytics Provider ──────────────────────────────────────────────────────
 final analyticsProvider =
     AsyncNotifierProvider<AnalyticsNotifier, AnalyticsSummary?>(

@@ -205,6 +205,44 @@ class _HomeTabState extends ConsumerState<HomeTab> {
     );
   }
 
+  Widget _buildStreakHeaderPill(ThemeData theme, int currentStreak) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            context.colors.primary.withAlpha(235),
+            context.colors.secondary.withAlpha(220),
+          ],
+        ),
+        borderRadius: AppRadii.pill,
+        border: Border.all(color: Colors.white.withAlpha(40), width: 1),
+        boxShadow: [
+          BoxShadow(
+            color: context.colors.primary.withAlpha(40),
+            blurRadius: 18,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.local_fire_department_rounded,
+              size: 18, color: Colors.white),
+          const SizedBox(width: 6),
+          Text(
+            '$currentStreak day streak',
+            style: theme.textTheme.labelLarge?.copyWith(
+              color: Colors.white,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showResourcesSheet(List<dynamic> resources) {
     showModalBottomSheet(
       context: context,
@@ -391,7 +429,7 @@ class _HomeTabState extends ConsumerState<HomeTab> {
           : "Finishing one task today puts you ahead of 70% of learners at the same stage. It takes less than 30 min.";
       ctaLabel = nextTaskTitle != null ? "Do \"${_truncate(nextTaskTitle, 22)}\" now →" : "Get back on track →";
       seedMessage = nextTaskTitle != null
-          ? "I want to get back on track. My next task is \"$nextTaskTitle\"${milestoneTitle != null ? ' in the \"$milestoneTitle\" milestone' : ''}. Help me knock it out fast."
+          ? 'I want to get back on track. My next task is "$nextTaskTitle"${milestoneTitle != null ? ' in the "$milestoneTitle" milestone' : ''}. Help me knock it out fast.'
           : "I want to get back on track. What's the quickest win I can get right now?";
     } else {
       // WAVERING
@@ -525,7 +563,7 @@ class _HomeTabState extends ConsumerState<HomeTab> {
         body: Center(
             child: CircularProgressIndicator(color: context.colors.primary)),
       ),
-      error: (_, __) => Scaffold(
+      error: (error, stackTrace) => Scaffold(
         backgroundColor: Colors.transparent,
         body: Center(
           child: Column(
@@ -609,6 +647,11 @@ class _HomeTabState extends ConsumerState<HomeTab> {
                             ],
                           ),
                         ),
+                        if (userStats.currentStreak > 0) ...[
+                          const SizedBox(width: AppSpacing.sm),
+                          _buildStreakHeaderPill(theme, userStats.currentStreak),
+                        ],
+                        const SizedBox(width: AppSpacing.sm),
                         _NotificationBell(
                           hasUnread: unreadCount > 0,
                           onTap: () {
@@ -807,58 +850,6 @@ class _HomeTabState extends ConsumerState<HomeTab> {
 
                     // ─── Coach Nudge Card ───
                     _buildCoachNudgeCard(coachStatus, data),
-
-                    // ─── Streak Card ───
-                    GlassCard(
-                      padding: EdgeInsets.all(AppSpacing.lg),
-                      child: Row(
-                        children: [
-                          SizedBox(
-                            width: 40,
-                            height: 40,
-                            child: Lottie.asset(
-                                'assets/lottie/streak_fire.json',
-                                repeat: true),
-                          ),
-                          SizedBox(width: AppSpacing.md),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                    '${userStats.currentStreak} Day Streak 🔥',
-                                    style: theme.textTheme.titleMedium),
-                                const SizedBox(height: 4),
-                                Row(
-                                  children: List.generate(7, (index) {
-                                    final isActive = index <
-                                        userStats.currentStreak.clamp(0, 7);
-                                    return Expanded(
-                                      child: Container(
-                                        height: 6,
-                                        margin:
-                                            const EdgeInsets.only(right: 4),
-                                        decoration: BoxDecoration(
-                                          color: isActive
-                                              ? context.colors.warning
-                                              : context.colors.surfaceLight,
-                                          borderRadius: AppRadii.pill,
-                                        ),
-                                      ),
-                                    );
-                                  }),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
-                        .animate()
-                        .fadeIn(delay: 100.ms)
-                        .slideY(begin: 0.1, end: 0, duration: 500.ms),
-
-                    SizedBox(height: AppSpacing.lg),
 
                     // ─── XP Card ───
                     GlassCard(

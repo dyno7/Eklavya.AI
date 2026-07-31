@@ -3,6 +3,8 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/services/goals_service.dart';
+import 'goal_card.dart';
 import 'goal_roadmap_screen.dart';
 import '../../core/providers/app_providers.dart';
 import '../../core/theme/app_colors.dart';
@@ -20,30 +22,45 @@ class _GoalsTabState extends ConsumerState<GoalsTab> {
   final domains = ['All', 'Learning', 'Fitness', 'Startup', 'Finance', 'Writing'];
   String selectedDomain = 'All';
 
-  Color _getDomainColor(String domain) {
-    switch (domain) {
-      case 'learning':
-        return context.colors.primary;
-      case 'startup':
-        return context.colors.secondary;
-      case 'writing':
-        return context.colors.accent;
-      default:
-        return context.colors.textSecondary;
-    }
+  Future<void> _archiveSelectedGoal(GoalItem goal) async {
+    final ok = await GoalsService().archiveGoal(goal.id);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(ok ? 'Roadmap archived' : 'Could not archive roadmap'),
+        backgroundColor: ok ? context.colors.success : context.colors.error,
+      ),
+    );
   }
 
-  IconData _getDomainIcon(String domain) {
-    switch (domain) {
-      case 'learning':
-        return Icons.school_rounded;
-      case 'startup':
-        return Icons.rocket_launch_rounded;
-      case 'writing':
-        return Icons.edit_note_rounded;
-      default:
-        return Icons.track_changes_rounded;
-    }
+  Future<void> _deleteGoal(GoalItem goal) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete roadmap?'),
+        content: Text('This permanently removes "${goal.title}" and all of its milestones and tasks.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    final ok = await GoalsService().deleteGoal(goal.id);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(ok ? 'Roadmap deleted' : 'Could not delete roadmap'),
+        backgroundColor: ok ? context.colors.success : context.colors.error,
+      ),
+    );
   }
 
   @override
@@ -57,7 +74,7 @@ class _GoalsTabState extends ConsumerState<GoalsTab> {
         body: Center(
             child: CircularProgressIndicator(color: context.colors.primary)),
       ),
-      error: (_, __) => Scaffold(
+      error: (error, stackTrace) => Scaffold(
         backgroundColor: Colors.transparent,
         body: Center(
           child: Column(
@@ -78,12 +95,13 @@ class _GoalsTabState extends ConsumerState<GoalsTab> {
         ),
       ),
       data: (goals) {
-        final displayedGoals = selectedDomain == 'All'
+        final filteredGoals = selectedDomain == 'All'
             ? goals
             : goals
                 .where((g) =>
                     g.domain.toLowerCase() == selectedDomain.toLowerCase())
                 .toList();
+        final displayedGoals = filteredGoals;
 
         return Scaffold(
           backgroundColor: Colors.transparent,
@@ -102,14 +120,33 @@ class _GoalsTabState extends ConsumerState<GoalsTab> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('My Goals',
-                          style: theme.textTheme.displayLarge
-                              ?.copyWith(fontSize: 32)),
-                      const SizedBox(height: 4),
-                      Text(
-                          '${goals.where((g) => g.status == 'active').length} active goals',
-                          style: theme.textTheme.bodyLarge?.copyWith(
-                              color: context.colors.textSecondary)),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('My Goals',
+                                    style: theme.textTheme.displayLarge
+                                        ?.copyWith(fontSize: 32)),
+                                const SizedBox(height: 4),
+                                Text(
+                                    '${goals.where((g) => g.status == 'active' && !g.archived).length} active goals',
+                                    style: theme.textTheme.bodyLarge?.copyWith(
+                                        color: context.colors.textSecondary)),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: 'Archived roadmaps',
+                            onPressed: () => context.push('/goals/archive'),
+                            icon: Icon(
+                              Icons.archive_outlined,
+                              color: context.colors.textPrimary,
+                            ),
+                          ),
+                        ],
+                      ),
                     ],
                   ),
                 ),
@@ -190,96 +227,20 @@ class _GoalsTabState extends ConsumerState<GoalsTab> {
                             itemCount: displayedGoals.length,
                             itemBuilder: (context, index) {
                               final goal = displayedGoals[index];
-                              final domainColor =
-                                  _getDomainColor(goal.domain);
-                              return InkWell(
+                              return GoalCard(
+                                goal: goal,
                                 onTap: () {
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
-                                        builder: (_) =>
-                                            GoalRoadmapScreen(goal: goal)),
+                                      builder: (_) => GoalRoadmapScreen(goal: goal),
+                                    ),
                                   );
                                 },
-                                borderRadius: AppRadii.lg,
-                                child: Container(
-                                  margin: EdgeInsets.only(
-                                      bottom: AppSpacing.md),
-                                  padding:
-                                      EdgeInsets.all(AppSpacing.lg),
-                                  decoration: BoxDecoration(
-                                    color: context.colors.surface,
-                                    borderRadius: AppRadii.lg,
-                                    border: Border.all(
-                                        color:
-                                            context.colors.glassBorder),
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Container(
-                                            padding:
-                                                const EdgeInsets.all(8),
-                                            decoration: BoxDecoration(
-                                              color: domainColor
-                                                  .withValues(alpha: 0.2),
-                                              borderRadius: AppRadii.md,
-                                            ),
-                                            child: Icon(
-                                                _getDomainIcon(
-                                                    goal.domain),
-                                                color: domainColor,
-                                                size: 20),
-                                          ),
-                                          SizedBox(width: AppSpacing.md),
-                                          Expanded(
-                                            child: Text(goal.title,
-                                                style: theme.textTheme
-                                                    .titleMedium),
-                                          ),
-                                        ],
-                                      ),
-                                      SizedBox(height: AppSpacing.lg),
-                                      Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment
-                                                .spaceBetween,
-                                        children: [
-                                          Text('Progress',
-                                              style: theme
-                                                  .textTheme.labelMedium
-                                                  ?.copyWith(
-                                                      color: context.colors
-                                                          .textSecondary)),
-                                          Text(
-                                              '${goal.completedMilestones}/${goal.milestonesCount} milestones',
-                                              style: theme
-                                                  .textTheme.labelMedium
-                                                  ?.copyWith(
-                                                      color: context.colors
-                                                          .textPrimary)),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 8),
-                                      ClipRRect(
-                                        borderRadius: AppRadii.pill,
-                                        child: LinearProgressIndicator(
-                                          value: goal.progress / 100.0,
-                                          backgroundColor:
-                                              context.colors.surfaceLight,
-                                          valueColor:
-                                              AlwaysStoppedAnimation<
-                                                      Color>(
-                                                  domainColor),
-                                          minHeight: 8,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
+                                primaryActionLabel: 'Archive',
+                                primaryActionIcon: Icons.archive_outlined,
+                                onPrimaryAction: () => _archiveSelectedGoal(goal),
+                                onDelete: () => _deleteGoal(goal),
                               )
                                   .animate()
                                   .fadeIn(delay: (100 * index).ms)

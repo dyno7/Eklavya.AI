@@ -56,27 +56,10 @@ class _LoginScreenState extends State<LoginScreen>
               // ─── Branding ───
               Column(
                 children: [
-                  Container(
-                    width: 64,
-                    height: 64,
-                    decoration: BoxDecoration(
-                      gradient: context.colors.primaryGradient,
-                      borderRadius: AppRadii.lg,
-                      boxShadow: [
-                        BoxShadow(
-                          color: context.colors.primary.withAlpha(80),
-                          blurRadius: 20,
-                          offset: const Offset(0, 8),
-                        ),
-                      ],
-                    ),
-                    child: const Center(
-                      child: Text('E',
-                          style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 32,
-                              fontWeight: FontWeight.bold)),
-                    ),
+                  Image.asset(
+                    'assets/images/logo_symbol_dark_theme.png',
+                    width: 72,
+                    height: 72,
                   ),
                   SizedBox(height: AppSpacing.md),
                   Text('Eklavya',

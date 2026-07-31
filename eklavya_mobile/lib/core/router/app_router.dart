@@ -6,6 +6,7 @@ import '../widgets/gradient_background.dart';
 
 import '../../features/analytics/analytics_tab.dart';
 import '../../features/auth/login_screen.dart';
+import '../../features/goals/archive_page.dart';
 import '../../features/chat/chat_tab.dart';
 import '../../features/coach/coach_page.dart';
 import '../../features/dashboard/home_tab.dart';
@@ -50,7 +51,7 @@ final GoRouter appRouter = GoRouter(
     ),
     GoRoute(
       path: '/signup',
-      redirect: (_, __) => '/login',
+      redirect: (context, state) => '/login',
     ),
 
     // ─── Standalone routes ────────
@@ -92,6 +93,10 @@ final GoRouter appRouter = GoRouter(
             GoRoute(
               path: '/goals',
               builder: (context, state) => GoalsTab(),
+            ),
+            GoRoute(
+              path: '/goals/archive',
+              builder: (context, state) => const GoalArchivePage(),
             ),
           ],
         ),

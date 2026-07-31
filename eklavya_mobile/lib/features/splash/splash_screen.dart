@@ -43,6 +43,21 @@ class _SplashScreenState extends State<SplashScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              // ─── Logo Image ───
+              Image.asset(
+                'assets/images/logo_symbol_dark_theme.png',
+                width: 120,
+                height: 120,
+              )
+                  .animate()
+                  .fadeIn(duration: 800.ms, curve: Curves.easeOutCubic)
+                  .scale(
+                    begin: const Offset(0.8, 0.8),
+                    end: const Offset(1.0, 1.0),
+                    duration: 800.ms,
+                    curve: Curves.easeOutCubic,
+                  ),
+              const SizedBox(height: 24),
               // ─── Logo text ───
               Row(
                 mainAxisSize: MainAxisSize.min,

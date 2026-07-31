@@ -163,7 +163,7 @@ def _collect_resources(roadmap: dict | None, limit: int = 6) -> list[dict]:
 async def _fetch_goal_resources(db: AsyncSession, user_id, limit: int = 6) -> list[dict]:
     """Fetch stored resources from the user's active goal metadata."""
     goals = await repo.get_goals_for_user(db, user_id)
-    active = [g for g in goals if g.status.value == "active"]
+    active = [g for g in goals if g.status.value == "active" and not g.archived]
     if not active:
         return []
     goal = active[0]
@@ -200,7 +200,7 @@ async def send_message(
         current_streak = user.current_streak or 0
 
         goals = await repo.get_goals_for_user(db, current_user_id)
-        active_goals = [g for g in goals if g.status.value == "active"]
+        active_goals = [g for g in goals if g.status.value == "active" and not g.archived]
         if active_goals:
             roadmap_context = f"Active Goal Title: {active_goals[0].title}\nDescription: {active_goals[0].description}"
 

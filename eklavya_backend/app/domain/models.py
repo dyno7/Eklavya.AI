@@ -8,6 +8,7 @@ from datetime import date, datetime
 from typing import Optional
 
 from sqlalchemy import (
+    Boolean,
     Date,
     DateTime,
     Enum as SAEnum,
@@ -119,6 +120,15 @@ class Goal(Base):
         DateTime(timezone=True), server_default=text("now()")
     )
     updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()")
+    )
+    archived: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false")
+    )
+    archived_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_activity_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=text("now()")
     )
 

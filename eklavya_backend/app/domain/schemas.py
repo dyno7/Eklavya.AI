@@ -68,6 +68,9 @@ class GoalResponse(BaseModel):
     status: GoalStatus
     created_at: datetime
     updated_at: datetime
+    archived: bool = False
+    archived_at: Optional[datetime] = None
+    last_activity_at: datetime
 
 
 class GoalUpdate(BaseModel):
@@ -76,6 +79,7 @@ class GoalUpdate(BaseModel):
     description: Optional[str] = Field(None, max_length=5000)
     status: Optional[GoalStatus] = None
     target_date: Optional[date] = None
+    archived: Optional[bool] = None
 
 
 # ─── Milestone ────────────────────────────────────────────────

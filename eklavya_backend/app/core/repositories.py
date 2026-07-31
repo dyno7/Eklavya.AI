@@ -90,12 +90,15 @@ async def create_goal(
     return goal
 
 
-async def get_goals_for_user(db: AsyncSession, user_id: uuid.UUID) -> list[Goal]:
-    """List all goals for a user, ordered by creation date (newest first)."""
+async def get_goals_for_user(
+    db: AsyncSession, user_id: uuid.UUID, archived: bool = False
+) -> list[Goal]:
+    """List a user's goals (archived or not), ordered by most recent activity."""
     result = await db.execute(
         select(Goal)
         .where(Goal.user_id == user_id)
-        .order_by(Goal.created_at.desc())
+        .where(Goal.archived == archived)
+        .order_by(Goal.last_activity_at.desc())
     )
     return list(result.scalars().all())
 
@@ -112,7 +115,8 @@ async def get_dashboard_active_goal(db: AsyncSession, user_id: uuid.UUID) -> Opt
         )
         .where(Goal.user_id == user_id)
         .where(Goal.status == GoalStatus.ACTIVE)
-        .order_by(Goal.created_at.desc())
+        .where(Goal.archived == False)  # noqa: E712
+        .order_by(Goal.last_activity_at.desc())
         .limit(1)
     )
     result = await db.execute(stmt)
@@ -135,10 +139,25 @@ async def update_goal(
     if not update_data:
         return await get_goal_by_id(db, goal_id)
 
-    update_data["updated_at"] = datetime.now(timezone.utc)
+    if "archived" in update_data:
+        update_data["archived_at"] = datetime.now(timezone.utc) if update_data["archived"] else None
+
+    now = datetime.now(timezone.utc)
+    update_data["updated_at"] = now
+    update_data["last_activity_at"] = now
     await db.execute(
         update(Goal).where(Goal.id == goal_id).values(**update_data)
     )
+    await db.commit()
+    return await get_goal_by_id(db, goal_id)
+
+
+async def delete_goal(db: AsyncSession, goal_id: uuid.UUID) -> None:
+    """Permanently delete a goal. Cascades to its milestones and tasks."""
+    goal = await get_goal_by_id(db, goal_id)
+    if goal is None:
+        return
+    await db.delete(goal)
     await db.commit()
 
 
@@ -159,6 +178,7 @@ async def create_milestone(
         order_index=order_index,
     )
     db.add(milestone)
+    await _touch_goal(db, goal_id)
     await db.commit()
     await db.refresh(milestone)
     return milestone
@@ -201,6 +221,7 @@ async def create_task(
         order_index=order_index,
     )
     db.add(task)
+    await _touch_goal_for_milestone(db, milestone_id)
     await db.commit()
     await db.refresh(task)
     return task
@@ -224,6 +245,58 @@ async def get_task_by_id(db: AsyncSession, task_id: uuid.UUID) -> Optional[Task]
     return result.scalar_one_or_none()
 
 
+async def get_task_owner_id(db: AsyncSession, task_id: uuid.UUID) -> Optional[uuid.UUID]:
+    """Resolve the user_id that owns a task, via Task -> Milestone -> Goal."""
+    stmt = (
+        select(Goal.user_id)
+        .select_from(Task)
+        .join(Milestone, Task.milestone_id == Milestone.id)
+        .join(Goal, Milestone.goal_id == Goal.id)
+        .where(Task.id == task_id)
+    )
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none()
+
+
+async def _touch_goal_for_task(db: AsyncSession, task_id: uuid.UUID) -> None:
+    """Bump the owning goal's last_activity_at for a given task (no commit)."""
+    goal_subq = (
+        select(Milestone.goal_id)
+        .join(Task, Task.milestone_id == Milestone.id)
+        .where(Task.id == task_id)
+        .scalar_subquery()
+    )
+    await db.execute(
+        update(Goal).where(Goal.id == goal_subq).values(last_activity_at=datetime.now(timezone.utc))
+    )
+
+
+async def _touch_goal(db: AsyncSession, goal_id: uuid.UUID) -> None:
+    """Bump a goal's last_activity_at directly (no commit)."""
+    await db.execute(
+        update(Goal).where(Goal.id == goal_id).values(last_activity_at=datetime.now(timezone.utc))
+    )
+
+
+async def _touch_goal_for_milestone(db: AsyncSession, milestone_id: uuid.UUID) -> None:
+    """Bump the owning goal's last_activity_at for a given milestone (no commit)."""
+    await db.execute(
+        update(Goal)
+        .where(Goal.id == select(Milestone.goal_id).where(Milestone.id == milestone_id).scalar_subquery())
+        .values(last_activity_at=datetime.now(timezone.utc))
+    )
+
+
+async def delete_task(db: AsyncSession, task_id: uuid.UUID) -> None:
+    """Permanently delete a task and mark its goal as recently touched."""
+    task = await get_task_by_id(db, task_id)
+    if task is None:
+        return
+    await _touch_goal_for_task(db, task_id)
+    await db.delete(task)
+    await db.commit()
+
+
 async def get_milestone_by_id(db: AsyncSession, milestone_id: uuid.UUID) -> Optional[Milestone]:
     result = await db.execute(select(Milestone).where(Milestone.id == milestone_id))
     return result.scalar_one_or_none()
@@ -238,7 +311,7 @@ async def get_goal_by_user_and_status(
         select(Goal)
         .where(Goal.user_id == user_id)
         .where(Goal.status == status)
-        .order_by(Goal.created_at.desc())
+        .order_by(Goal.last_activity_at.desc())
     )
     return list(result.scalars().all())
 
@@ -274,7 +347,9 @@ async def update_task_status(
     await db.execute(
         update(Task).where(Task.id == task_id).values(**update_data)
     )
+    await _touch_goal_for_task(db, task_id)
     await db.commit()
+    return await get_task_by_id(db, task_id)
 
 
 async def update_milestone_status(
@@ -285,6 +360,7 @@ async def update_milestone_status(
     await db.execute(
         update(Milestone).where(Milestone.id == milestone_id).values(status=status)
     )
+    await _touch_goal_for_milestone(db, milestone_id)
     await db.commit()
 
 

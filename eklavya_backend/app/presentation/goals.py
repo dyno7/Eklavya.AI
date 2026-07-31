@@ -48,11 +48,12 @@ async def create_goal(
 
 @router.get("/", response_model=list[GoalResponse])
 async def list_goals(
+    archived: bool = False,
     db: AsyncSession = Depends(get_db),
     current_user_id: uuid.UUID = Depends(get_current_user_id),
 ):
-    """List all goals for the authenticated user."""
-    return await repo.get_goals_for_user(db, current_user_id)
+    """List all goals for the authenticated user (non-archived by default)."""
+    return await repo.get_goals_for_user(db, current_user_id, archived=archived)
 
 
 @router.get("/{goal_id}", response_model=GoalResponse)
@@ -87,8 +88,23 @@ async def update_goal(
         description=body.description,
         status=body.status,
         target_date=body.target_date,
+        archived=body.archived,
     )
     return updated
+
+
+@router.delete("/{goal_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_goal(
+    goal_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Permanently delete a goal and its milestones/tasks."""
+    goal = await repo.get_goal_by_id(db, goal_id)
+    if goal is None or goal.user_id != current_user_id:
+        raise HTTPException(status_code=404, detail="Goal not found")
+
+    await repo.delete_goal(db, goal_id)
 
 
 # ─── Milestones (nested under goals) ──────────────────────────

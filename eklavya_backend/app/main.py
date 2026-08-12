@@ -18,6 +18,7 @@ from app.presentation.coach import router as coach_router
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from app.core.gdi_service import GdiService
 from app.core.config import get_settings
+from app.core.http_client import close_http_client
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +73,7 @@ async def lifespan(app: FastAPI):
     yield
 
     scheduler.shutdown()
+    await close_http_client()
 
 app = FastAPI(
     title="Eklavya.AI Core API",

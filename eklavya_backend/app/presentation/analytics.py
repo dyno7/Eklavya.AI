@@ -41,7 +41,7 @@ async def get_analytics_summary(
     user_id = current_user.id
     cache_key = str(user_id)
 
-    cached = AnalyticsCache.get(cache_key)
+    cached = await AnalyticsCache.get(cache_key)
     if cached is not None:
         return cached
 
@@ -78,7 +78,7 @@ async def get_analytics_summary(
         total_tasks=total_tasks,
         completed_tasks=completed_tasks,
     )
-    AnalyticsCache.set(cache_key, result)
+    await AnalyticsCache.set(cache_key, result)
     return result
 
 @router.post("/session_start")

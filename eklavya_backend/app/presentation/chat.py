@@ -194,15 +194,15 @@ async def send_message(
     current_streak = 0
     coach_state = None
     try:
-        user = await repo.get_user_profile(db, current_user_id)
+        # OPTIMIZED: Single call to get user, active goal, and streak
+        user, active_goal, current_streak = await repo.get_user_chat_context(db, current_user_id)
+        
         if user is None:
             user = await repo.upsert_user_profile(db, current_user_id, display_name=current_user.display_name)
-        current_streak = user.current_streak or 0
-
-        goals = await repo.get_goals_for_user(db, current_user_id)
-        active_goals = [g for g in goals if g.status.value == "active" and not g.archived]
-        if active_goals:
-            roadmap_context = f"Active Goal Title: {active_goals[0].title}\nDescription: {active_goals[0].description}"
+            current_streak = 0
+        
+        if active_goal:
+            roadmap_context = f"Active Goal Title: {active_goal.title}\nDescription: {active_goal.description}"
 
         gdi_state = await GdiService.calculate_current_gdi(db, current_user_id)
         coach_state = f"{gdi_state['state']} ({gdi_state['intervention']})"

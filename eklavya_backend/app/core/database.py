@@ -34,15 +34,28 @@ def get_engine() -> AsyncEngine:
     if _engine is None:
         from app.core.config import get_settings
         settings = get_settings()
+        
+        # Production-tuned pool settings
+        is_prod = settings.ENVIRONMENT == "production"
+        pool_size = 20 if is_prod else 10
+        max_overflow = 30 if is_prod else 20
+        
         _engine = create_async_engine(
             settings.DATABASE_URL,
             echo=settings.ENVIRONMENT == "development",
             pool_pre_ping=True,
-            pool_size=10,          # max persistent connections
-            max_overflow=20,       # extra connections under burst
-            pool_timeout=30,       # wait max 30s for a connection before raising
-            pool_recycle=1800,     # recycle connections every 30 min (avoids Supabase idle timeout)
-            connect_args={"ssl": "require", "statement_cache_size": 0},
+            pool_size=pool_size,
+            max_overflow=max_overflow,
+            pool_timeout=10,       # Reduced from 30s - fail fast under contention
+            pool_recycle=1800,
+            connect_args={
+                "ssl": "require",
+                "statement_cache_size": 0,
+                "server_settings": {
+                    "application_name": "eklavya-backend",
+                    "jit": "off",  # Disable JIT for lower latency on small queries
+                },
+            },
         )
     return _engine
 

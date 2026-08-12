@@ -92,7 +92,7 @@ async def get_dashboard_summary(
     cache_key = str(current_user_id)
 
     # ── Cache hit: serve from memory (30s TTL) ────────────────────────────────
-    cached = DashboardCache.get(cache_key)
+    cached = await DashboardCache.get(cache_key)
     if cached is not None:
         return cached
 
@@ -171,7 +171,7 @@ async def get_dashboard_summary(
         current_milestone=milestone_summary,
         pending_tasks=pending,
     )
-    DashboardCache.set(cache_key, response)
+    await DashboardCache.set(cache_key, response)
     return response
 
 
@@ -185,7 +185,7 @@ async def claim_task(
     current_user_id = current_user.id
 
     # ── Invalidate dashboard cache so next load is fresh ──────────────────────
-    DashboardCache.invalidate(str(current_user_id))
+    await DashboardCache.invalidate(str(current_user_id))
 
     # SQLAlchemy async sessions don't allow concurrent ops on the same session.
     task = await repo.get_task_by_id(db, task_id)
@@ -203,24 +203,25 @@ async def claim_task(
     bonus_xp_from_milestone = 0
     bonus_xp_from_goal = 0
     try:
-        milestone = await repo.get_milestone_by_id(db, task_milestone_id)
-        if milestone:
-            milestone_tasks = await repo.get_tasks_for_milestone(db, milestone.id)
-            if milestone_tasks and all(t.status == TaskStatus.COMPLETED for t in milestone_tasks):
+        # OPTIMIZED: Single query to get milestone, its tasks, and parent goal
+        milestone, milestone_tasks, goal = await repo.get_milestone_with_tasks_and_goal(db, task_milestone_id)
+        
+        if milestone and milestone_tasks:
+            if all(t.status == TaskStatus.COMPLETED for t in milestone_tasks):
                 await repo.update_milestone_status(db, milestone.id, MilestoneStatus.COMPLETED)
                 bonus_xp_from_milestone = 50
 
-                milestones = await repo.get_milestones_for_goal(db, milestone.goal_id)
+                # Get all milestones for goal to check if next should be unlocked
+                milestones = await repo.get_all_milestones_for_goal(db, milestone.goal_id)
                 remaining = [m for m in milestones if m.status != MilestoneStatus.COMPLETED]
                 if remaining:
                     next_milestone = sorted(remaining, key=lambda item: item.order_index)[0]
                     if next_milestone.status == MilestoneStatus.LOCKED:
                         await repo.update_milestone_status(db, next_milestone.id, MilestoneStatus.ACTIVE)
 
-                goal = await repo.get_goal_by_id(db, milestone.goal_id)
                 if goal:
-                    refreshed = await repo.get_milestones_for_goal(db, goal.id)
-                    if refreshed and all(m.status == MilestoneStatus.COMPLETED for m in refreshed):
+                    # Check if all milestones are now completed
+                    if all(m.status == MilestoneStatus.COMPLETED for m in milestones):
                         await repo.update_goal(db, goal.id, status=GoalStatus.COMPLETED)
                         bonus_xp_from_goal = 200
     except Exception as e:

@@ -4,6 +4,8 @@ Each function takes an AsyncSession and returns SA model instances.
 Pydantic conversion happens in the router layer via from_attributes=True.
 """
 
+import asyncio
+import time
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
@@ -14,13 +16,51 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.domain.enums import TaskStatus
 from app.domain.models import Badge, ChatMemory, Goal, Milestone, Notification, Task, User, UserBadge
 
+# ── Simple in-memory query result cache ───────────────────────────────────────
+_query_cache: dict[str, tuple[Any, float]] = {}
+_QUERY_CACHE_TTL = 5  # seconds
+_query_cache_lock = asyncio.Lock()
+
+async def _get_cached(key: str) -> Optional[Any]:
+    async with _query_cache_lock:
+        entry = _query_cache.get(key)
+        if entry is None:
+            return None
+        value, expires_at = entry
+        if time.monotonic() > expires_at:
+            _query_cache.pop(key, None)
+            return None
+        return value
+
+async def _set_cached(key: str, value: Any, ttl: float = _QUERY_CACHE_TTL) -> None:
+    async with _query_cache_lock:
+        if len(_query_cache) >= 1000:
+            oldest = next(iter(_query_cache))
+            _query_cache.pop(oldest, None)
+        _query_cache[key] = (value, time.monotonic() + ttl)
+
+async def _invalidate_cache(pattern: str) -> None:
+    """Invalidate cache entries matching a pattern."""
+    async with _query_cache_lock:
+        keys_to_delete = [k for k in _query_cache if pattern in k]
+        for k in keys_to_delete:
+            _query_cache.pop(k, None)
+
 
 # ─── Users ─────────────────────────────────────────────────────
 
 async def get_user_profile(db: AsyncSession, user_id: uuid.UUID) -> Optional[User]:
     """Get a user profile by ID. Returns None if not found."""
+    cache_key = f"user_profile:{user_id}"
+    cached = await _get_cached(cache_key)
+    if cached is not None:
+        return cached
+    
     result = await db.execute(select(User).where(User.id == user_id))
-    return result.scalar_one_or_none()
+    user = result.scalar_one_or_none()
+    if user:
+        await _set_cached(cache_key, user)
+    return user
 
 
 async def upsert_user_profile(
@@ -41,6 +81,12 @@ async def upsert_user_profile(
         user.updated_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(user)
+    
+    # Invalidate cache
+    cache_key = f"user_profile:{user_id}"
+    async with _query_cache_lock:
+        _query_cache.pop(cache_key, None)
+    
     return user
 
 
@@ -108,6 +154,11 @@ async def get_dashboard_active_goal(db: AsyncSession, user_id: uuid.UUID) -> Opt
     from sqlalchemy.orm import selectinload
     from app.domain.enums import GoalStatus
     
+    cache_key = f"dashboard_active_goal:{user_id}"
+    cached = await _get_cached(cache_key)
+    if cached is not None:
+        return cached
+    
     stmt = (
         select(Goal)
         .options(
@@ -120,7 +171,10 @@ async def get_dashboard_active_goal(db: AsyncSession, user_id: uuid.UUID) -> Opt
         .limit(1)
     )
     result = await db.execute(stmt)
-    return result.scalar_one_or_none()
+    goal = result.scalar_one_or_none()
+    if goal:
+        await _set_cached(cache_key, goal, ttl=10)  # Shorter TTL for dashboard data
+    return goal
 
 
 async def get_goal_by_id(db: AsyncSession, goal_id: uuid.UUID) -> Optional[Goal]:
@@ -149,7 +203,14 @@ async def update_goal(
         update(Goal).where(Goal.id == goal_id).values(**update_data)
     )
     await db.commit()
-    return await get_goal_by_id(db, goal_id)
+    
+    # Invalidate dashboard cache for this user
+    goal = await get_goal_by_id(db, goal_id)
+    if goal:
+        await _invalidate_cache(f"dashboard_active_goal:{goal.user_id}")
+        await _invalidate_cache(f"user_profile:{goal.user_id}")
+    
+    return goal
 
 
 async def delete_goal(db: AsyncSession, goal_id: uuid.UUID) -> None:
@@ -157,8 +218,13 @@ async def delete_goal(db: AsyncSession, goal_id: uuid.UUID) -> None:
     goal = await get_goal_by_id(db, goal_id)
     if goal is None:
         return
+    user_id = goal.user_id
     await db.delete(goal)
     await db.commit()
+    
+    # Invalidate dashboard cache for this user
+    await _invalidate_cache(f"dashboard_active_goal:{user_id}")
+    await _invalidate_cache(f"user_profile:{user_id}")
 
 
 # ─── Milestones ────────────────────────────────────────────────
@@ -332,6 +398,40 @@ async def get_latest_task_completion_for_user(
     return result.scalar_one_or_none()
 
 
+async def get_milestone_with_tasks_and_goal(
+    db: AsyncSession, milestone_id: uuid.UUID
+) -> tuple[Optional[Milestone], list[Task], Optional[Goal]]:
+    """Get milestone with its tasks and parent goal in a single query."""
+    from sqlalchemy.orm import selectinload
+    
+    # Get milestone with tasks
+    milestone_stmt = (
+        select(Milestone)
+        .options(selectinload(Milestone.tasks))
+        .where(Milestone.id == milestone_id)
+    )
+    milestone_result = await db.execute(milestone_stmt)
+    milestone = milestone_result.scalar_one_or_none()
+    
+    if not milestone:
+        return None, [], None
+    
+    # Get parent goal
+    goal_stmt = select(Goal).where(Goal.id == milestone.goal_id)
+    goal_result = await db.execute(goal_stmt)
+    goal = goal_result.scalar_one_or_none()
+    
+    tasks = list(milestone.tasks) if milestone.tasks else []
+    return milestone, tasks, goal
+
+
+async def get_all_milestones_for_goal(db: AsyncSession, goal_id: uuid.UUID) -> list[Milestone]:
+    """Get all milestones for a goal."""
+    stmt = select(Milestone).where(Milestone.goal_id == goal_id).order_by(Milestone.order_index)
+    result = await db.execute(stmt)
+    return list(result.scalars().all())
+
+
 async def update_task_status(
     db: AsyncSession,
     task_id: uuid.UUID,
@@ -344,11 +444,20 @@ async def update_task_status(
     elif status != TaskStatus.COMPLETED:
         update_data["completed_at"] = None
 
+    # Get user_id before updating to invalidate cache
+    user_id = await get_task_owner_id(db, task_id)
+    
     await db.execute(
         update(Task).where(Task.id == task_id).values(**update_data)
     )
     await _touch_goal_for_task(db, task_id)
     await db.commit()
+    
+    # Invalidate dashboard cache for this user
+    if user_id:
+        await _invalidate_cache(f"dashboard_active_goal:{user_id}")
+        await _invalidate_cache(f"user_profile:{user_id}")
+    
     return await get_task_by_id(db, task_id)
 
 
@@ -357,11 +466,24 @@ async def update_milestone_status(
     milestone_id: uuid.UUID,
     status,
 ) -> Optional[Milestone]:
+    # Get user_id before updating to invalidate cache
+    milestone = await get_milestone_by_id(db, milestone_id)
+    user_id = None
+    if milestone:
+        goal = await get_goal_by_id(db, milestone.goal_id)
+        if goal:
+            user_id = goal.user_id
+    
     await db.execute(
         update(Milestone).where(Milestone.id == milestone_id).values(status=status)
     )
     await _touch_goal_for_milestone(db, milestone_id)
     await db.commit()
+    
+    # Invalidate dashboard cache for this user
+    if user_id:
+        await _invalidate_cache(f"dashboard_active_goal:{user_id}")
+        await _invalidate_cache(f"user_profile:{user_id}")
 
 
 # ─── Badges ───────────────────────────────────────────────────
@@ -601,4 +723,39 @@ async def get_session_messages(
         .order_by(ChatMemory.created_at.asc())
     )
     return list(result.scalars().all())
+
+
+async def get_user_chat_context(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+) -> tuple[Optional[User], Optional[Goal], int]:
+    """
+    Get user profile, active goal, and streak in a single query for chat context.
+    Returns (user, active_goal, current_streak).
+    """
+    from sqlalchemy.orm import selectinload
+    from app.domain.enums import GoalStatus
+    
+    # Get user profile
+    user_stmt = select(User).where(User.id == user_id)
+    user_result = await db.execute(user_stmt)
+    user = user_result.scalar_one_or_none()
+    
+    if not user:
+        return None, None, 0
+    
+    # Get active goal with milestones for roadmap context
+    goal_stmt = (
+        select(Goal)
+        .options(selectinload(Goal.milestones))
+        .where(Goal.user_id == user_id)
+        .where(Goal.status == GoalStatus.ACTIVE)
+        .where(Goal.archived == False)  # noqa: E712
+        .order_by(Goal.last_activity_at.desc())
+        .limit(1)
+    )
+    goal_result = await db.execute(goal_stmt)
+    active_goal = goal_result.scalar_one_or_none()
+    
+    return user, active_goal, user.current_streak or 0
 

@@ -132,10 +132,9 @@ You can customize the "message" field.
         if is_ready:
             self.roadmap = self._extract_roadmap(reply)
             if self.roadmap:
-                try:
-                    await fix_roadmap_resources(self.roadmap)
-                except Exception as e:
-                    logger.warning("Resource link validation failed, keeping originals: %s", e)
+                # NON-BLOCKING: Run link validation in background, don't await
+                import asyncio
+                asyncio.create_task(self._validate_resources_background(self.roadmap))
                 try:
                     json.loads(reply.strip())
                     clean_reply = "🎉 Your personalized roadmap is ready! Head to the Goals tab to start learning."
@@ -365,3 +364,11 @@ You can customize the "message" field.
         self.roadmap = None
         if self._offline:
             self._demo_step = 0
+
+    async def _validate_resources_background(self, roadmap: dict) -> None:
+        """Background task to validate resource links without blocking the response."""
+        try:
+            from app.core.link_validator import fix_roadmap_resources
+            await fix_roadmap_resources(roadmap)
+        except Exception as e:
+            logger.warning("Background resource link validation failed: %s", e)

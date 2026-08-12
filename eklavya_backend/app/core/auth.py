@@ -9,13 +9,13 @@ import uuid
 import logging
 import time
 
-import httpx
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from pydantic import BaseModel
 
 from app.core.config import get_settings
+from app.core.http_client import get_http_client
 
 # HTTPBearer extracts "Bearer <token>" from the Authorization header
 _bearer_scheme = HTTPBearer()
@@ -39,10 +39,10 @@ async def _get_supabase_jwks() -> list[dict]:
     settings = get_settings()
     jwks_url = f"{settings.SUPABASE_URL.rstrip('/')}/auth/v1/.well-known/jwks.json"
 
-    async with httpx.AsyncClient(timeout=5.0) as client:
-        response = await client.get(jwks_url)
-        response.raise_for_status()
-        payload = response.json()
+    client = get_http_client()
+    response = await client.get(jwks_url)
+    response.raise_for_status()
+    payload = response.json()
 
     keys = payload.get("keys", []) if isinstance(payload, dict) else []
     if not isinstance(keys, list):

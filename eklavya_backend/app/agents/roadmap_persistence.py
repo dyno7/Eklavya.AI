@@ -10,6 +10,7 @@ import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import repositories as repo
+from app.core.link_validator import fix_roadmap_resources
 from app.domain.enums import MilestoneStatus
 
 logger = logging.getLogger(__name__)
@@ -66,6 +67,13 @@ async def persist_roadmap(
         Exception: if goal creation itself fails. Individual milestone/task
         failures are logged but do not abort the whole roadmap.
     """
+    # 0. Validate and fix all resource links BEFORE persisting
+    # This ensures no broken links are stored in the database
+    try:
+        roadmap = await fix_roadmap_resources(roadmap)
+    except Exception as e:
+        logger.warning("Link validation failed, proceeding with original roadmap: %s", e)
+
     # 1. Extract and aggregate resources for the goal-level metadata
     all_resources: list[dict] = []
     milestones = roadmap.get("milestones", [])

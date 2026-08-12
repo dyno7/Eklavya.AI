@@ -135,12 +135,25 @@ class TaskResponse(BaseModel):
     status: TaskStatus
     due_date: Optional[date] = None
     completed_at: Optional[datetime] = None
+    started_at: Optional[datetime] = None
+    actual_minutes: Optional[int] = None
+    timer_running: bool = False
     created_at: datetime
 
 
 class TaskStatusUpdate(BaseModel):
     """Update only the status of a task."""
     status: TaskStatus
+
+
+class TaskTimerStart(BaseModel):
+    """Start the timer for a task."""
+    pass
+
+
+class TaskTimerStop(BaseModel):
+    """Stop the timer for a task."""
+    pass
 
 
 # ─── Badges ───────────────────────────────────────────────────

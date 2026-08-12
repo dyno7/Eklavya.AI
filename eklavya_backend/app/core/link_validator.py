@@ -12,7 +12,7 @@ import asyncio
 import logging
 from urllib.parse import quote_plus
 
-import httpx
+from app.core.http_client import get_http_client
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,8 @@ def _fallback_url(title: str) -> str:
     return f"https://www.google.com/search?q={quote_plus(title or 'learning resource')}"
 
 
-async def _is_reachable(client: httpx.AsyncClient, url: str) -> bool:
+async def _is_reachable(url: str) -> bool:
+    client = get_http_client()
     try:
         resp = await client.head(url, headers=_HEADERS, follow_redirects=True, timeout=_TIMEOUT)
         if resp.status_code < 400:
@@ -55,7 +56,7 @@ async def _is_reachable(client: httpx.AsyncClient, url: str) -> bool:
         return False
 
 
-async def _check_one(client: httpx.AsyncClient, semaphore: asyncio.Semaphore, resource: dict) -> None:
+async def _check_one(semaphore: asyncio.Semaphore, resource: dict) -> None:
     """Verify a single resource dict's URL in place (mutates url/verified)."""
     url = str(resource.get("url", "")).strip()
     title = str(resource.get("title", "")).strip() or url
@@ -63,7 +64,7 @@ async def _check_one(client: httpx.AsyncClient, semaphore: asyncio.Semaphore, re
         return
     async with semaphore:
         try:
-            reachable = await _is_reachable(client, url)
+            reachable = await _is_reachable(url)
         except Exception as e:
             logger.warning("Link check errored for %s: %s", url, e)
             reachable = False
@@ -81,8 +82,7 @@ async def fix_resources(resources: list[dict]) -> list[dict]:
         return resources
 
     semaphore = asyncio.Semaphore(_MAX_CONCURRENCY)
-    async with httpx.AsyncClient() as client:
-        await asyncio.gather(*(_check_one(client, semaphore, r) for r in valid))
+    await asyncio.gather(*(_check_one(semaphore, r) for r in valid))
     return resources
 
 
@@ -112,7 +112,37 @@ async def fix_roadmap_resources(roadmap: dict) -> dict:
         return roadmap
 
     semaphore = asyncio.Semaphore(_MAX_CONCURRENCY)
-    async with httpx.AsyncClient() as client:
-        await asyncio.gather(*(_check_one(client, semaphore, r) for r in all_resources))
+    await asyncio.gather(*(_check_one(semaphore, r) for r in all_resources))
+
+    # Log validation results
+    verified_count = sum(1 for r in all_resources if r.get("verified", False))
+    fallback_count = len(all_resources) - verified_count
+    logger.info("Link validation: %d verified, %d replaced with fallback", verified_count, fallback_count)
 
     return roadmap
+
+
+async def validate_single_url(url: str, title: str = "") -> tuple[str, bool]:
+    """
+    Validate a single URL and return (validated_url, is_verified).
+    If URL is not reachable, returns a Google search fallback URL and False.
+    """
+    if not url or not url.strip():
+        return _fallback_url(title or "learning resource"), False
+
+    reachable = await _is_reachable(url)
+    if reachable:
+        return url, True
+    else:
+        return _fallback_url(title or url), False
+
+
+async def validate_resources_batch(resources: list[dict]) -> list[dict]:
+    """Validate a batch of resources, returning updated list with verified flags."""
+    valid = [r for r in resources if isinstance(r, dict)]
+    if not valid:
+        return resources
+
+    semaphore = asyncio.Semaphore(_MAX_CONCURRENCY)
+    await asyncio.gather(*(_check_one(semaphore, r) for r in valid))
+    return resources

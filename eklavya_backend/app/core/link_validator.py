@@ -12,6 +12,7 @@ import asyncio
 import logging
 from urllib.parse import quote_plus
 
+import httpx
 from app.core.http_client import get_http_client
 
 logger = logging.getLogger(__name__)

@@ -107,6 +107,7 @@ else:
             "https://eklavya.ai",
             "https://www.eklavya.ai",
             "https://api.eklavya.ai",
+            "https://eklavya-ai.onrender.com",
         ],
         allow_credentials=False,
         allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],

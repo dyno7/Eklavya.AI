@@ -288,9 +288,7 @@ You can customize the "message" field.
 
         if self._demo_step == 1:
             return (
-                "Welcome! I'm your Eklavya Guru 🧠\n\n"
-                "I'd love to help you create a personalized learning roadmap. "
-                "To start — what specific skill, project, or goal do you want to master?",
+                "Hey! What skill do you want to master or what goal do you want to achieve? 🧠",
                 False,
             )
         elif self._demo_step == 2:

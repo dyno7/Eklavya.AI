@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -28,6 +30,10 @@ class _GoalRoadmapScreenState extends ConsumerState<GoalRoadmapScreen> {
   List<MilestoneItem>? _milestones;
   final Set<String> _completingTasks = {};
   final Set<String> _deletingTasks = {};
+  final Set<String> _startingTimers = {};
+  final Set<String> _stoppingTimers = {};
+  Timer? _timerUpdateTimer;
+  final Map<String, DateTime> _timerStartTimes = {};
 
   @override
   void initState() {
@@ -35,10 +41,121 @@ class _GoalRoadmapScreenState extends ConsumerState<GoalRoadmapScreen> {
     _fetchRoadmap();
   }
 
+  @override
+  void dispose() {
+    _timerUpdateTimer?.cancel();
+    super.dispose();
+  }
+
   Future<void> _fetchRoadmap() async {
     final data = await _goalsService.fetchGoalRoadmap(widget.goal.id);
     if (!mounted) return;
     setState(() => _milestones = data);
+  }
+
+  Future<void> _startTaskTimer(TaskItem task) async {
+    if (_startingTimers.contains(task.id) || task.timerRunning) {
+      return;
+    }
+
+    setState(() {
+      _startingTimers.add(task.id);
+      _timerStartTimes[task.id] = DateTime.now();
+    });
+
+    final updatedTask = await _goalsService.startTaskTimer(task.id);
+    if (!mounted) return;
+
+    setState(() {
+      _startingTimers.remove(task.id);
+    });
+
+    if (updatedTask != null) {
+      _updateTaskInState(updatedTask);
+      _startTimerUpdater();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Timer started for "${task.title}"'),
+          backgroundColor: context.colors.primary,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } else {
+      setState(() {
+        _timerStartTimes.remove(task.id);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to start timer'),
+          backgroundColor: context.colors.error,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
+  Future<void> _stopTaskTimer(TaskItem task) async {
+    if (_stoppingTimers.contains(task.id) || !task.timerRunning) {
+      return;
+    }
+
+    setState(() {
+      _stoppingTimers.add(task.id);
+    });
+
+    final updatedTask = await _goalsService.stopTaskTimer(task.id);
+    if (!mounted) return;
+
+    setState(() {
+      _stoppingTimers.remove(task.id);
+      _timerStartTimes.remove(task.id);
+    });
+
+    if (updatedTask != null) {
+      _updateTaskInState(updatedTask);
+      _maybeStopTimerUpdater();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Timer stopped — ${updatedTask.actualMinutes} min recorded'),
+          backgroundColor: context.colors.success,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to stop timer'),
+          backgroundColor: context.colors.error,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
+  void _startTimerUpdater() {
+    _timerUpdateTimer?.cancel();
+    _timerUpdateTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  void _maybeStopTimerUpdater() {
+    final hasRunningTimer = _milestones?.expand((m) => m.tasks).any((t) => t.timerRunning) ?? false;
+    if (!hasRunningTimer) {
+      _timerUpdateTimer?.cancel();
+      _timerUpdateTimer = null;
+    }
+  }
+
+  void _updateTaskInState(TaskItem updatedTask) {
+    for (var m in _milestones!) {
+      for (int i = 0; i < m.tasks.length; i++) {
+        if (m.tasks[i].id == updatedTask.id) {
+          m.tasks[i] = updatedTask;
+          break;
+        }
+      }
+    }
   }
 
   Future<void> _completeTask(TaskItem task) async {
@@ -236,6 +353,19 @@ class _GoalRoadmapScreenState extends ConsumerState<GoalRoadmapScreen> {
       default:
         return Icons.task_alt_rounded;
     }
+  }
+
+  String _formatElapsedTime(TaskItem task) {
+    if (task.timerRunning && task.startedAt != null) {
+      final elapsed = DateTime.now().difference(task.startedAt!);
+      final minutes = elapsed.inMinutes;
+      final seconds = elapsed.inSeconds % 60;
+      return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+    }
+    if (task.actualMinutes != null) {
+      return '${task.actualMinutes}m';
+    }
+    return '00:00';
   }
 
   @override
@@ -459,6 +589,27 @@ class _GoalRoadmapScreenState extends ConsumerState<GoalRoadmapScreen> {
                               trailing: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
+                                  if (task.actualMinutes != null)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: context.colors.success
+                                            .withAlpha(20),
+                                        borderRadius: AppRadii.pill,
+                                        border: Border.all(
+                                            color: context.colors.success
+                                                .withAlpha(50)),
+                                      ),
+                                      child: Text(
+                                        '${task.actualMinutes} min',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: context.colors.success,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
                                   if (!_deletingTasks.contains(task.id))
                                     IconButton(
                                       tooltip: 'Delete task',
@@ -536,6 +687,71 @@ class _GoalRoadmapScreenState extends ConsumerState<GoalRoadmapScreen> {
                                                 ?.copyWith(
                                                     color: context.colors
                                                         .textSecondary)),
+                                        if (task.timerRunning) ...[
+                                          const SizedBox(width: 12),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 8, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: context.colors.primary
+                                                  .withAlpha(20),
+                                              borderRadius: AppRadii.pill,
+                                              border: Border.all(
+                                                  color: context.colors.primary
+                                                      .withAlpha(50)),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(Icons.timer_rounded,
+                                                    size: 12,
+                                                    color: context
+                                                        .colors.primaryLight),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  _formatElapsedTime(task),
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    color: context
+                                                        .colors.primaryLight,
+                                                    fontWeight: FontWeight.w600,
+                                                    fontFamily: 'monospace'),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ] else if (task.actualMinutes != null) ...[
+                                          const SizedBox(width: 12),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 8, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: context.colors.success
+                                                  .withAlpha(20),
+                                              borderRadius: AppRadii.pill,
+                                              border: Border.all(
+                                                  color: context.colors.success
+                                                      .withAlpha(50)),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(Icons.check_circle_rounded,
+                                                    size: 12,
+                                                    color: context
+                                                        .colors.success),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  '${task.actualMinutes} min actual',
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    color: context.colors.success,
+                                                    fontWeight: FontWeight.w600),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
                                         SizedBox(width: AppSpacing.md),
                                         Icon(_getTaskIcon(task.type),
                                             size: 14,
@@ -550,7 +766,7 @@ class _GoalRoadmapScreenState extends ConsumerState<GoalRoadmapScreen> {
                                                       .textSecondary),
                                         ),
                                       ]),
-                                      if (task.resources.isNotEmpty) ...[
+if (task.resources.isNotEmpty) ...[
                                         SizedBox(height: AppSpacing.md),
                                         Text('Resources',
                                             style: theme.textTheme.labelLarge
@@ -564,53 +780,155 @@ class _GoalRoadmapScreenState extends ConsumerState<GoalRoadmapScreen> {
                                         )),
                                       ],
                                       SizedBox(height: AppSpacing.md),
-                                      GestureDetector(
-                                        onTap: () {
-                                          CoachContextService.setContext(
-                                              CoachTaskContext(
-                                            taskTitle: task.title,
-                                            taskDescription: task
-                                                    .description.isNotEmpty
-                                                ? task.description
-                                                : null,
-                                            taskType: task.type,
-                                            milestoneTitle: milestone.title,
-                                          ));
-                                          context.go('/coach');
-                                        },
-                                        child: Container(
-                                          padding: EdgeInsets.symmetric(
-                                              horizontal: AppSpacing.md,
-                                              vertical: AppSpacing.sm + 2),
-                                          decoration: BoxDecoration(
-                                            gradient: LinearGradient(
-                                              colors: [
-                                                context.colors.secondary
-                                                    .withAlpha(200),
-                                                context.colors.accent
-                                                    .withAlpha(200)
-                                              ],
+                                      // Timer + Coach row (prominent pill buttons)
+                                      if (!isCompleted) ...[
+                                        Row(
+                                          children: [
+                                            // Start/Stop Timer Pill Button
+                                            Expanded(
+                                              child: GestureDetector(
+                                                onTap: task.timerRunning
+                                                    ? (_stoppingTimers.contains(task.id)
+                                                        ? null
+                                                        : () => _stopTaskTimer(task))
+                                                    : (_startingTimers.contains(task.id)
+                                                        ? null
+                                                        : () => _startTaskTimer(task)),
+                                                child: AnimatedContainer(
+                                                  duration: const Duration(milliseconds: 200),
+                                                  padding: EdgeInsets.symmetric(
+                                                      horizontal: AppSpacing.md,
+                                                      vertical: AppSpacing.sm + 2),
+                                                  decoration: BoxDecoration(
+                                                    gradient: LinearGradient(
+                                                      colors: task.timerRunning
+                                                          ? [
+                                                              context.colors.error
+                                                                  .withAlpha(200),
+                                                              context.colors.error
+                                                                  .withAlpha(180),
+                                                            ]
+                                                          : [
+                                                              context.colors.success
+                                                                  .withAlpha(200),
+                                                              context.colors.success
+                                                                  .withAlpha(180),
+                                                            ],
+                                                    ),
+                                                    borderRadius: AppRadii.pill,
+                                                    boxShadow: [
+                                                      BoxShadow(
+                                                        color: (task.timerRunning
+                                                            ? context.colors.error
+                                                            : context.colors.success)
+                                                            .withAlpha(80),
+                                                        blurRadius: 8,
+                                                        offset: const Offset(0, 4),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  child: Row(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    mainAxisAlignment:
+                                                        MainAxisAlignment.center,
+                                                    children: [
+                                                      if (_startingTimers.contains(task.id) ||
+                                                          _stoppingTimers.contains(task.id))
+                                                        SizedBox(
+                                                          width: 16,
+                                                          height: 16,
+                                                          child: CircularProgressIndicator(
+                                                            strokeWidth: 2,
+                                                            color: Colors.white,
+                                                          ),
+                                                        )
+                                                      else
+                                                        Icon(
+                                                            task.timerRunning
+                                                                ? Icons.timer_rounded
+                                                                : Icons.play_arrow_rounded,
+                                                            size: 18,
+                                                            color: Colors.white),
+                                                      const SizedBox(width: AppSpacing.sm),
+                                                      Text(
+                                                        task.timerRunning
+                                                            ? 'Stop Timer'
+                                                            : 'Start Timer',
+                                                        style: TextStyle(
+                                                          color: Colors.white,
+                                                          fontWeight:
+                                                              FontWeight.w700,
+                                                          fontSize: 14),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ),
                                             ),
-                                            borderRadius: AppRadii.pill,
-                                          ),
-                                          child: const Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Icon(
-                                                  Icons.psychology_rounded,
-                                                  size: 16,
-                                                  color: Colors.white),
-                                              SizedBox(width: AppSpacing.sm),
-                                              Text('Ask Coach',
-                                                  style: TextStyle(
-                                                      color: Colors.white,
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                      fontSize: 13)),
-                                            ],
-                                          ),
+                                            const SizedBox(width: AppSpacing.md),
+                                            // Ask Coach Pill Button
+                                            Expanded(
+                                              child: GestureDetector(
+                                                onTap: () {
+                                                  CoachContextService.setContext(
+                                                      CoachTaskContext(
+                                                    taskTitle: task.title,
+                                                    taskDescription: task
+                                                            .description.isNotEmpty
+                                                        ? task.description
+                                                        : null,
+                                                    taskType: task.type,
+                                                    milestoneTitle: milestone.title,
+                                                  ));
+                                                  context.go('/coach');
+                                                },
+                                                child: Container(
+                                                  padding: EdgeInsets.symmetric(
+                                                      horizontal: AppSpacing.md,
+                                                      vertical: AppSpacing.sm + 2),
+                                                  decoration: BoxDecoration(
+                                                    gradient: LinearGradient(
+                                                      colors: [
+                                                        context.colors.secondary
+                                                            .withAlpha(200),
+                                                        context.colors.accent
+                                                            .withAlpha(200)
+                                                      ],
+                                                    ),
+                                                    borderRadius: AppRadii.pill,
+                                                    boxShadow: [
+                                                      BoxShadow(
+                                                        color: context.colors.secondary
+                                                            .withAlpha(80),
+                                                        blurRadius: 8,
+                                                        offset: const Offset(0, 4),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  child: const Row(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    mainAxisAlignment:
+                                                        MainAxisAlignment.center,
+                                                    children: [
+                                                      Icon(
+                                                        Icons.psychology_rounded,
+                                                        size: 18,
+                                                        color: Colors.white),
+                                                      SizedBox(width: AppSpacing.sm),
+                                                      Text('Ask Coach',
+                                                          style: TextStyle(
+                                                              color: Colors.white,
+                                                              fontWeight:
+                                                                  FontWeight.w700,
+                                                              fontSize: 14)),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ],
                                         ),
-                                      ),
+                                      ],
                                     ],
                                   ),
                                 ),

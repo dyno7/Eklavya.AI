@@ -181,3 +181,133 @@ async def persist_roadmap(
 
     logger.info("Persisted %d/%d milestones for goal %s", created_milestones, len(milestones), goal.id)
     return goal.id
+
+
+async def update_roadmap(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    goal_id: uuid.UUID,
+    roadmap: dict,
+) -> uuid.UUID:
+    """
+    Update an existing goal's roadmap with new milestones/tasks.
+    Preserves completed tasks, updates/archives others.
+    """
+    # Validate and fix resource links
+    try:
+        roadmap = await fix_roadmap_resources(roadmap)
+    except Exception as e:
+        logger.warning("Link validation failed, proceeding with original roadmap: %s", e)
+
+    # Verify goal ownership
+    goal = await repo.get_goal_by_id(db, goal_id)
+    if not goal or goal.user_id != user_id:
+        raise ValueError("Goal not found or access denied")
+
+    # Archive existing incomplete milestones/tasks (mark as skipped/locked)
+    existing_milestones = await repo.get_milestones_for_goal(db, goal_id)
+    for ms in existing_milestones:
+        if ms.status != MilestoneStatus.COMPLETED:
+            # Mark incomplete milestones as locked (won't show as active)
+            await repo.update_milestone_status(db, ms.id, MilestoneStatus.LOCKED)
+            # Mark their incomplete tasks as skipped
+            tasks = await repo.get_tasks_for_milestone(db, ms.id)
+            for task in tasks:
+                if task.status != TaskStatus.COMPLETED:
+                    await repo.update_task_status(db, task.id, TaskStatus.SKIPPED)
+
+    # Update goal metadata
+    all_resources: list[dict] = []
+    milestones = roadmap.get("milestones", [])
+    for ms_data in milestones:
+        if not isinstance(ms_data, dict):
+            continue
+        for t_data in ms_data.get("tasks", []):
+            if not isinstance(t_data, dict):
+                continue
+            task_type_raw = str(t_data.get("type", "custom")).strip().lower()
+            task_type = task_type_raw if task_type_raw in _VALID_TASK_TYPES else "custom"
+            for r in t_data.get("resources", []):
+                if not isinstance(r, dict):
+                    continue
+                r["type"] = task_type
+                if len(all_resources) < 15:
+                    all_resources.append(r)
+
+    domain = _coerce_domain(roadmap.get("domain"))
+    title = str(roadmap.get("title") or "My Learning Roadmap")[:500]
+    estimated_weeks = roadmap.get("estimated_weeks") or "?"
+
+    await repo.update_goal(
+        db,
+        goal_id,
+        title=title,
+        description=f"AI-updated roadmap • {estimated_weeks} weeks",
+        domain=domain,
+        metadata_={
+            "source": "guru_agent",
+            "estimated_weeks": roadmap.get("estimated_weeks"),
+            "committed_minutes_per_day": roadmap.get("committed_minutes_per_day"),
+            "resources": all_resources,
+            "updated_at": "auto",
+        },
+    )
+
+    # Create new milestones + tasks
+    created_milestones = 0
+    for ms_idx, ms_data in enumerate(milestones):
+        if not isinstance(ms_data, dict):
+            continue
+        try:
+            narrative_arc = str(ms_data.get("narrative_arc") or "").strip()
+            ms_description = f"~{ms_data.get('estimated_days', '?')} days"
+            if narrative_arc:
+                ms_description = f"[{narrative_arc}] {ms_description}"
+
+            milestone = await repo.create_milestone(
+                db,
+                goal_id=goal_id,
+                title=str(ms_data.get("title") or f"Milestone {ms_idx + 1}")[:500],
+                description=ms_description,
+                order_index=int(ms_data.get("order", ms_idx + 1)),
+            )
+
+            if ms_idx == 0:
+                await repo.update_milestone_status(db, milestone.id, MilestoneStatus.ACTIVE)
+
+            for t_idx, task_data in enumerate(ms_data.get("tasks", [])):
+                if not isinstance(task_data, dict):
+                    continue
+                try:
+                    task_type_raw = str(task_data.get("type", "custom")).strip().lower()
+                    task_type = task_type_raw if task_type_raw in _VALID_TASK_TYPES else "custom"
+                    xp_reward = task_data.get("xp_reward", 10)
+                    if not isinstance(xp_reward, int):
+                        try:
+                            xp_reward = int(xp_reward)
+                        except (TypeError, ValueError):
+                            xp_reward = 10
+
+                    await repo.create_task(
+                        db,
+                        milestone_id=milestone.id,
+                        title=str(task_data.get("title") or f"Task {t_idx + 1}")[:500],
+                        description=str(task_data.get("description") or ""),
+                        task_type=task_type,
+                        xp_reward=xp_reward,
+                        order_index=t_idx,
+                        metadata_={
+                            "estimated_minutes": task_data.get("estimated_minutes", 30),
+                            "resources": task_data.get("resources", []),
+                            "narrative_arc": narrative_arc or None,
+                        },
+                    )
+                except Exception as e:
+                    logger.error("Skipped task %d in milestone %s: %s", t_idx, milestone.id, e)
+
+            created_milestones += 1
+        except Exception as e:
+            logger.error("Skipped milestone %d in goal %s: %s\n%s", ms_idx, goal_id, e, traceback.format_exc())
+
+    logger.info("Updated %d/%d milestones for goal %s", created_milestones, len(milestones), goal_id)
+    return goal_id

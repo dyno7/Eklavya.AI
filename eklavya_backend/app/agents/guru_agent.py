@@ -92,6 +92,17 @@ If the user explicitly asks to see their roadmap, asks to navigate to it, or ask
 {"navigate_to": "roadmap", "message": "Let's go to your roadmap!"}
 ```
 You can customize the "message" field.
+
+## Roadmap Editing Commands
+If the user wants to MODIFY their existing roadmap (e.g., "make it easier", "add more practice tasks", "I'm stuck on milestone 2", "reduce time commitment", "swap video for reading"), you have TWO options:
+
+1. **Minor tweaks** — reply with EDIT_ROADMAP signal containing the specific changes:
+```json
+{"edit_roadmap": {"goal_id": "<existing_goal_id>", "changes": {"milestones": [...modified milestones...]}}}
+```
+Only include the milestones/tasks that need to change. Preserve completed items.
+
+2. **Major overhaul** — if they want a completely different direction, generate a NEW full roadmap with ROADMAP_READY signal (will create a new goal).
 """
 
         # Core system prompt last so strict JSON rules are freshest in context.
@@ -107,12 +118,12 @@ You can customize the "message" field.
             self._offline = True
             self._demo_step = 0
 
-    async def chat(self, user_message: str) -> tuple[str, bool, bool, list[str] | None]:
+    async def chat(self, user_message: str) -> tuple[str, bool, bool, list[str] | None, bool, str | None, dict | None]:
         """
         Send a user message and get the Guru's reply.
 
         Returns:
-            (reply_text, is_roadmap_ready, navigate_to_roadmap, options)
+            (reply_text, is_roadmap_ready, navigate_to_roadmap, options, edit_roadmap, edit_goal_id, edit_changes)
         """
         self.history.append({"role": "user", "content": user_message})
 
@@ -149,11 +160,20 @@ You can customize the "message" field.
 
         # Parse navigate_to signals
         navigate_to_roadmap = False
+        edit_roadmap = False
+        edit_goal_id = None
+        edit_changes = None
         try:
             parsed = json.loads(reply)
             if parsed.get("navigate_to") == "roadmap":
                 navigate_to_roadmap = True
                 reply = parsed.get("message", "Navigating to your roadmap!")
+            elif parsed.get("edit_roadmap"):
+                edit_roadmap = True
+                edit_data = parsed["edit_roadmap"]
+                edit_goal_id = edit_data.get("goal_id")
+                edit_changes = edit_data.get("changes")
+                reply = "Updating your roadmap with those changes..."
         except Exception:
             match = re.search(r"```json\s*({[\s\S]*?})\s*```", reply)
             if match:
@@ -162,11 +182,17 @@ You can customize the "message" field.
                     if parsed.get("navigate_to") == "roadmap":
                         navigate_to_roadmap = True
                         reply = parsed.get("message", "Navigating to your roadmap!")
+                    elif parsed.get("edit_roadmap"):
+                        edit_roadmap = True
+                        edit_data = parsed["edit_roadmap"]
+                        edit_goal_id = edit_data.get("goal_id")
+                        edit_changes = edit_data.get("changes")
+                        reply = "Updating your roadmap with those changes..."
                 except Exception:
                     pass
 
         self.history[-1]["content"] = reply
-        return reply, False, navigate_to_roadmap, options
+        return reply, False, navigate_to_roadmap, options, edit_roadmap, edit_goal_id, edit_changes
 
     def _build_contents(self, extra: list[types.Content] | None = None) -> list[types.Content]:
         """Conversation history as Gemini Content objects (system prompt goes via config, not here)."""
@@ -181,7 +207,7 @@ You can customize the "message" field.
             contents.extend(extra)
         return contents
 
-    async def _gemini_response(self) -> tuple[str, bool]:
+    async def _gemini_response(self) -> tuple[str, bool, bool, list[str] | None, bool, str | None, dict | None]:
         """Get response from Gemini (stateless — passes full history each call)."""
         contents = self._build_contents()
         config = types.GenerateContentConfig(
@@ -206,7 +232,7 @@ You can customize the "message" field.
             except asyncio.TimeoutError:
                 logger.error("Gemini API timed out (attempt %d)", attempt + 1)
                 if attempt == 2:
-                    return "I'm taking too long — please send your message again.", False
+                    return "I'm taking too long — please send your message again.", False, False, None, False, None, None
             except errors.APIError as e:
                 if e.code == 429 and attempt < 2:
                     wait = 2 ** attempt
@@ -215,11 +241,11 @@ You can customize the "message" field.
                     continue
                 logger.error("Gemini API error: %s", e)
                 if e.code == 429:
-                    return "The AI is a bit overloaded right now — please try again in a moment.", False
-                return "I'm having a moment — could you try again?", False
+                    return "The AI is a bit overloaded right now — please try again in a moment.", False, False, None, False, None, None
+                return "I'm having a moment — could you try again?", False, False, None, False, None, None
             except Exception as e:
                 logger.error("Gemini API error: %s", e)
-                return "I'm having a moment — could you try again?", False
+                return "I'm having a moment — could you try again?", False, False, None, False, None, None
 
         signaled_ready = "ROADMAP_READY" in reply
         has_json_block = "```json" in reply and '"milestones"' in reply
@@ -227,7 +253,7 @@ You can customize the "message" field.
 
         if signaled_ready or has_json_block or has_inline_json:
             if self._extract_roadmap(reply) is not None:
-                return reply, True
+                return reply, True, False, None, False, None, None
 
             # Signal present but JSON malformed — do a JSON-mode follow-up,
             # constrained by a strict response schema so the output is
@@ -258,7 +284,7 @@ You can customize the "message" field.
                 json_reply = (followup.text or "").strip()
                 parsed = json.loads(json_reply)
                 if "milestones" in parsed:
-                    return json_reply, True
+                    return json_reply, True, False, None, False, None, None
             except asyncio.TimeoutError:
                 logger.error("Gemini JSON-mode follow-up timed out")
             except json.JSONDecodeError as e:
@@ -266,9 +292,9 @@ You can customize the "message" field.
             except Exception as e:
                 logger.error("JSON-mode follow-up failed: %s", e)
 
-            return reply, False
+            return reply, False, False, None, False, None, None
 
-        return reply, False
+        return reply, False, False, None, False, None, None
 
     @staticmethod
     def _extract_quick_reply(text: str) -> list[str] | None:
@@ -282,31 +308,31 @@ You can customize the "message" field.
                 pass
         return None
 
-    def _demo_response(self, user_message: str) -> tuple[str, bool]:
+    def _demo_response(self, user_message: str) -> tuple[str, bool, bool, list[str] | None, bool, str | None, dict | None]:
         """Offline demo responses that simulate the Guru conversation flow."""
         self._demo_step += 1
 
         if self._demo_step == 1:
             return (
                 "Hey! What skill do you want to master or what goal do you want to achieve? 🧠",
-                False,
+                False, False, None, False, None, None
             )
         elif self._demo_step == 2:
             return (
                 "Great choice! How would you describe your current experience level in this domain?",
-                False,
+                False, False, None, False, None, None
             )
         elif self._demo_step == 3:
             return (
                 "Perfect. How much time can you realistically commit per day? "
                 "Even 30 minutes of focused learning adds up quickly!",
-                False,
+                False, False, None, False, None, None
             )
         else:
             roadmap = self._generate_demo_roadmap()
             roadmap_json = json.dumps(roadmap, indent=2)
             reply = f"ROADMAP_READY\n```json\n{roadmap_json}\n```"
-            return reply, True
+            return reply, True, False, None, False, None, None
 
     def _generate_demo_roadmap(self) -> dict:
         return {

@@ -18,7 +18,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.guru_agent import GuruAgent
-from app.agents.roadmap_persistence import persist_roadmap
+from app.agents.roadmap_persistence import persist_roadmap, update_roadmap
 from app.core.auth import CurrentUser, get_current_user, get_current_user_id
 from app.core.database import get_db
 from app.core.gdi_service import GdiService
@@ -226,7 +226,7 @@ async def send_message(
         coach_state=coach_state,
     )
 
-    reply, is_roadmap_ready, navigate_to_roadmap, options = await agent.chat(request.message)
+    reply, is_roadmap_ready, navigate_to_roadmap, options, edit_roadmap, edit_goal_id, edit_changes = await agent.chat(request.message)
 
     goal_id = None
     persistence_failed = False
@@ -240,6 +240,25 @@ async def send_message(
             logger.error(traceback.format_exc())
             await db.rollback()
             persistence_failed = True
+
+    # Handle roadmap editing
+    if edit_roadmap and edit_goal_id and edit_changes:
+        try:
+            # Merge changes with existing roadmap
+            existing_goal = await repo.get_goal_by_id(db, uuid.UUID(edit_goal_id))
+            if existing_goal and existing_goal.user_id == current_user_id:
+                # Apply changes to the existing roadmap
+                # For now, we'll update the goal with the new milestones
+                updated_goal_id = await update_roadmap(db, current_user_id, uuid.UUID(edit_goal_id), edit_changes)
+                goal_id = str(updated_goal_id)
+                reply = "Your roadmap has been updated! Check the Goals tab."
+                logger.info("Roadmap updated for goal %s", goal_id)
+            else:
+                reply = "Couldn't find your roadmap to update. Let me know if you want to create a new one."
+        except Exception as e:
+            logger.error("Roadmap update failed: %s", e)
+            await db.rollback()
+            reply = "I had trouble updating your roadmap. Please try again."
 
     # If persistence failed, tell the frontend the roadmap is NOT ready so the
     # user doesn't get navigated to an empty Goals tab. Surface a clear message.

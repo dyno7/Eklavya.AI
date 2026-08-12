@@ -8,7 +8,7 @@ import asyncio
 import time
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
 from sqlalchemy import select, update, outerjoin, func
 from sqlalchemy.ext.asyncio import AsyncSession

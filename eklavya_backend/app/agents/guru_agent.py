@@ -38,6 +38,9 @@ class GuruAgent:
         self.user_id = user_id
         self.history: list[dict[str, str]] = []
         self.roadmap: dict | None = None
+        self._demo_step = 0
+        self._client = None
+        self._offline = True
 
         # Base capability scalar (Adaptive Goal Decomposition)
         self.user_capability_scalar = 1.0
@@ -110,13 +113,18 @@ Only include the milestones/tasks that need to change. Preserve completed items.
 
         settings = get_settings()
         if settings.GEMINI_API_KEY:
-            self._client = genai.Client(api_key=settings.GEMINI_API_KEY)
-            self._offline = False
+            try:
+                self._client = genai.Client(api_key=settings.GEMINI_API_KEY)
+                self._offline = False
+                logger.info("Gemini client initialized for Guru Agent")
+            except Exception as exc:
+                logger.warning("Gemini client init failed; falling back to offline demo mode: %s", exc)
+                self._client = None
+                self._offline = True
         else:
             logger.warning("GEMINI_API_KEY not set — running in offline demo mode")
             self._client = None
             self._offline = True
-            self._demo_step = 0
 
     async def chat(self, user_message: str) -> tuple[str, bool, bool, list[str] | None, bool, str | None, dict | None]:
         """
@@ -128,19 +136,36 @@ Only include the milestones/tasks that need to change. Preserve completed items.
         self.history.append({"role": "user", "content": user_message})
 
         if self._offline:
-            reply, is_ready = self._demo_response(user_message)
+            (
+                reply,
+                is_roadmap_ready,
+                navigate_to_roadmap,
+                options,
+                edit_roadmap,
+                edit_goal_id,
+                edit_changes,
+            ) = self._demo_response(user_message)
         else:
-            reply, is_ready = await self._gemini_response()
+            (
+                reply,
+                is_roadmap_ready,
+                navigate_to_roadmap,
+                options,
+                edit_roadmap,
+                edit_goal_id,
+                edit_changes,
+            ) = await self._gemini_response()
 
         # Parse QUICK_REPLY options from the reply
-        options = self._extract_quick_reply(reply)
+        if options is None:
+            options = self._extract_quick_reply(reply)
         if options:
             reply = re.sub(r'\n?QUICK_REPLY:\[.*?\]', '', reply).strip()
 
         self.history.append({"role": "assistant", "content": reply})
 
         # Check if the reply contains a roadmap
-        if is_ready:
+        if is_roadmap_ready:
             self.roadmap = self._extract_roadmap(reply)
             if self.roadmap:
                 # NON-BLOCKING: Run link validation in background, don't await
@@ -156,13 +181,9 @@ Only include the milestones/tasks that need to change. Preserve completed items.
                         reply,
                     )
                 self.history[-1]["content"] = clean_reply
-                return clean_reply, True, False, None
+                return clean_reply, True, False, None, False, None, None
 
         # Parse navigate_to signals
-        navigate_to_roadmap = False
-        edit_roadmap = False
-        edit_goal_id = None
-        edit_changes = None
         try:
             parsed = json.loads(reply)
             if parsed.get("navigate_to") == "roadmap":

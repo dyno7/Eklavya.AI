@@ -90,6 +90,7 @@ app = FastAPI(
 # reject preflight responses. We use Bearer tokens (Authorization header), not
 # cookies — so allow_credentials=False is safe and lets wildcards actually work
 # in development. In production, allow_credentials remains False with explicit origins.
+# Mobile apps don't send Origin headers, so we allow requests without Origin.
 settings = get_settings()
 if settings.ENVIRONMENT == "development":
     app.add_middleware(
@@ -101,6 +102,7 @@ if settings.ENVIRONMENT == "development":
         expose_headers=["X-Response-Time"],
     )
 else:
+    # Allow explicit origins for web + allow requests with no Origin (mobile apps)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[
@@ -109,6 +111,7 @@ else:
             "https://api.eklavya.ai",
             "https://eklavya-ai.onrender.com",
         ],
+        allow_origin_regex=".*",  # Allow any origin (mobile apps send no Origin)
         allow_credentials=False,
         allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type"],

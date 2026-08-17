@@ -177,6 +177,65 @@ class GoalsService {
     return false;
   }
 
+  /// Start the timer for a task
+  Future<TaskItem?> startTaskTimer(String taskId) async {
+    return _postWithRetry(
+      '$_baseUrl/api/v1/tasks/$taskId/timer/start',
+      'Start timer',
+    );
+  }
+
+  /// Stop the timer for a task
+  Future<TaskItem?> stopTaskTimer(String taskId) async {
+    return _postWithRetry(
+      '$_baseUrl/api/v1/tasks/$taskId/timer/stop',
+      'Stop timer',
+    );
+  }
+
+  /// Generic POST with retry logic for cold starts / transient failures
+  Future<TaskItem?> _postWithRetry(String url, String label) async {
+    const maxAttempts = 3;
+    const baseDelay = Duration(seconds: 2);
+
+    for (int attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        debugPrint('$label request (attempt ${attempt + 1}/$maxAttempts): $url');
+        debugPrint('Headers: $_headers');
+
+        final response = await http.post(
+          Uri.parse(url),
+          headers: _headers,
+        ).timeout(const Duration(seconds: 30));
+
+        debugPrint('$label response: ${response.statusCode} ${response.body}');
+
+        if (response.statusCode == 200) {
+          return TaskItem.fromJson(jsonDecode(response.body));
+        }
+
+        // Retry on 503 (service unavailable - cold start) or 502/504 (gateway issues)
+        final shouldRetry = response.statusCode == 503 ||
+            response.statusCode == 502 ||
+            response.statusCode == 504;
+
+        if (!shouldRetry || attempt == maxAttempts - 1) {
+          debugPrint('$label failed with status ${response.statusCode}: ${response.body}');
+          break;
+        }
+      } catch (e) {
+        debugPrint('$label error (attempt ${attempt + 1}/$maxAttempts): $e');
+        if (attempt == maxAttempts - 1) break;
+      }
+
+      // Exponential backoff: 2s, 4s
+      final delay = baseDelay * (attempt + 1);
+      debugPrint('$label retrying in ${delay.inSeconds}s...');
+      await Future.delayed(delay);
+    }
+    return null;
+  }
+
   Future<List<MilestoneItem>> fetchGoalRoadmap(String goalId) async {
     try {
       final mResponse = await http.get(
@@ -230,6 +289,9 @@ class TaskItem {
   final String status;
   final int estimatedMinutes;
   final List<TaskResource> resources;
+  final DateTime? startedAt;
+  final int? actualMinutes;
+  final bool timerRunning;
 
   TaskItem({
     required this.id,
@@ -240,6 +302,9 @@ class TaskItem {
     required this.status,
     this.estimatedMinutes = 30,
     this.resources = const [],
+    this.startedAt,
+    this.actualMinutes,
+    this.timerRunning = false,
   });
 
   factory TaskItem.fromJson(Map<String, dynamic> json) {
@@ -254,6 +319,9 @@ class TaskItem {
       status: json['status'] ?? 'pending',
       estimatedMinutes: (metadata['estimated_minutes'] as int?) ?? (json['estimated_minutes'] as int?) ?? 30,
       resources: rawResources.map((r) => TaskResource.fromJson(r as Map<String, dynamic>)).toList(),
+      startedAt: json['started_at'] != null ? DateTime.tryParse(json['started_at']) : null,
+      actualMinutes: json['actual_minutes'] as int?,
+      timerRunning: json['timer_running'] as bool? ?? false,
     );
   }
 }
